@@ -60,9 +60,9 @@ Aether has 7 built-in tools the AI can use:
 
 ### 1. Python (pip / pipx) — Recommended
 ```bash
-pipx install aether-cli
+pipx install aether-ai-cli
 # Or:
-pip install aether-cli
+pip install aether-ai-cli
 ```
 
 ### 2. NPM (Node.js)

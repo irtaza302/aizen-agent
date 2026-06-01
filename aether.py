@@ -259,8 +259,8 @@ def get_api_key(config: dict, reset: bool = False) -> str:
 
 def check_for_updates():
     try:
-        url = "https://pypi.org/pypi/aether-cli/json"
-        req = urllib.request.Request(url, headers={"User-Agent": "aether-cli"})
+        url = "https://pypi.org/pypi/aether-ai-cli/json"
+        req = urllib.request.Request(url, headers={"User-Agent": "aether-ai-cli"})
         with urllib.request.urlopen(req, timeout=0.8) as response:
             data = json.loads(response.read().decode())
             latest = data["info"]["version"]
@@ -268,7 +268,7 @@ def check_for_updates():
                 console.print(
                     f"[bold magenta]🔔 Update available:[/bold magenta] v{latest}"
                 )
-                console.print("[dim]Run: pip install -U aether-cli[/dim]\n")
+                console.print("[dim]Run: pip install -U aether-ai-cli[/dim]\n")
     except Exception:
         pass
 
