@@ -10,6 +10,15 @@ Aether is a sleek, intelligent AI coding assistant that runs directly in your te
 - **Interactive Diff Previews:** Color-coded diff verification (green additions, red deletions) before any file write operations.
 - **Flexible Configuration:** Set custom models, keys, and base URLs (supporting local Ollama, Gemini, Anthropic, or OpenAI).
 
+## Dependencies
+Aether requires the following Python packages:
+- `openai` - OpenAI API client
+- `python-dotenv` - Environment variable management
+- `rich` - Rich text and beautiful formatting in the terminal
+- `prompt_toolkit` - Building powerful interactive command lines
+
+These dependencies are automatically installed when you install Aether via any of the methods below.
+
 ## Installation
 
 You can install Aether via multiple package managers:

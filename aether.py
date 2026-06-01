@@ -9,6 +9,7 @@ import argparse
 import urllib.request
 import fnmatch
 import difflib
+import random
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import HTML
@@ -552,8 +553,19 @@ def main():
             user_input = inject_file_context(user_input, console)
             messages.append({"role": "user", "content": user_input})
             
+            STATUSES = [
+                "Thinking...",
+                "Searching context...",
+                "Investigating codebase...",
+                "Analyzing dependencies...",
+                "Formulating solution...",
+                "Synthesizing response..."
+            ]
+            
             while True:
-                console.print("[bold magenta]✦ Aether:[/bold magenta] ", end="", flush=True)
+                status_msg = random.choice(STATUSES)
+                console.print(f"[dim]⚙️ {status_msg}[/dim]", end="")
+                sys.stdout.flush()
                 
                 try:
                     stream = client.chat.completions.create(
@@ -564,18 +576,32 @@ def main():
                         stream=True
                     )
                 except Exception as e:
+                    sys.stdout.write("\r\033[K")
+                    sys.stdout.flush()
                     console.print(f"\n[bold red]API Error:[/bold red] {e}")
                     break
                 
                 full_content = ""
                 accumulated_tool_calls = {}
+                first_token = True
+                has_content = False
                 
                 for chunk in stream:
                     delta = chunk.choices[0].delta if chunk.choices else None
                     if not delta:
                         continue
                         
+                    if delta.content or delta.tool_calls:
+                        if first_token:
+                            sys.stdout.write("\r\033[K")
+                            sys.stdout.flush()
+                            first_token = False
+                            
                     if delta.content:
+                        if not has_content:
+                            console.print("[bold magenta]✦ Aether:[/bold magenta] ", end="")
+                            sys.stdout.flush()
+                            has_content = True
                         sys.stdout.write(delta.content)
                         sys.stdout.flush()
                         full_content += delta.content
@@ -598,8 +624,12 @@ def main():
                                 if tc.function.arguments:
                                     accumulated_tool_calls[idx]["arguments"] += tc.function.arguments
                                     
-                # Add trailing new line
-                print()
+                if first_token:
+                    sys.stdout.write("\r\033[K")
+                    sys.stdout.flush()
+                else:
+                    if has_content:
+                        print()
                 
                 # Convert accumulated_tool_calls to correct structure
                 tool_calls_list = []
