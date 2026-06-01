@@ -38,7 +38,7 @@ from rich.syntax import Syntax
 
 # ─── Constants ──────────────────────────────────────────────────────────────────
 
-VERSION = "2.0.0"
+VERSION = "2.0.1"
 CONFIG_PATH = os.path.expanduser("~/.aether_config.json")
 SESSIONS_DIR = os.path.expanduser("~/.aether_sessions")
 BACKUPS_DIR = os.path.expanduser("~/.aether_backups")
@@ -50,7 +50,9 @@ AETHER_ASCII = r"""[bold magenta]
   / /| |/ _ \ __/ __ \/ _ \/ ___/  
  / ___ /  __/ /_/ / / /  __/ /     
 /_/  |_\___/\__/_/ /_/\___/_/      
-[/bold magenta]"""
+[/bold magenta]
+    [dim]by Irtaza Malik[/dim]
+"""
 
 # Safe commands that auto-execute without confirmation
 SAFE_COMMAND_PREFIXES = [
