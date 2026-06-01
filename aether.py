@@ -18,6 +18,16 @@ from rich.text import Text
 from rich.align import Align
 from rich.rule import Rule
 
+AETHER_ASCII = r"""
+[bold magenta]
+    ___       __  __               
+   /   | ___ / /_/ /_  ___  _____  
+  / /| |/ _ \ __/ __ \/ _ \/ ___/  
+ / ___ /  __/ /_/ / / /  __/ /     
+/_/  |_\___/\__/_/ /_/\___/_/      
+[/bold magenta]
+"""
+
 def get_api_key():
     config_path = os.path.expanduser("~/.aether_config.json")
     
@@ -40,7 +50,7 @@ def get_api_key():
         
     # 3. Prompt user if no key found
     console = Console()
-    console.print("\n[bold yellow]Welcome to Aether! 🚀[/bold yellow]")
+    console.print(AETHER_ASCII)
     console.print("It looks like this is your first time running the agent.")
     console.print("To get started, please enter your OpenRouter API key.")
     console.print("(Get one at https://openrouter.ai/keys)\n")
@@ -152,7 +162,7 @@ def write_file(filepath: str, content: str) -> str:
         return f"Error writing file: {e}"
 
 def run_command(command: str) -> str:
-    console.print(Panel(f"[bold yellow]Agent wants to run command:[/bold yellow]\n{command}"))
+    console.print(Panel(f"[bold magenta]Aether wants to run command:[/bold magenta]\n{command}", border_style="magenta"))
     confirmation = input("Allow? (y/n): ")
     if confirmation.lower() != 'y':
         return "User denied command execution."
@@ -175,7 +185,7 @@ def execute_tool(tool_call) -> str:
     func_name = tool_call.function.name
     args = json.loads(tool_call.function.arguments)
     
-    console.print(f"⚙️  [bold blue]{func_name}[/bold blue]")
+    console.print(f"  [dim magenta]⚙️ Using tool: {func_name}[/dim magenta]")
     
     if func_name == "read_file":
         return read_file(args.get("filepath"))
@@ -230,7 +240,8 @@ class FileMentionCompleter(Completer):
                     yield Completion(file, start_position=-len(search_query))
 
 def main():
-    console.print("\n[bold]Aether AI Agent[/bold] (Type 'exit' to stop)\n")
+    console.print(AETHER_ASCII)
+    console.print("[dim]Type 'exit' to stop[/dim]\n")
     
     kb = KeyBindings()
     
@@ -246,7 +257,11 @@ def main():
     
     while True:
         try:
-            user_input = session.prompt(HTML('<ansigreen><b>❯ </b></ansigreen>'))
+            prompt_html = HTML(
+                '<ansimagenta>╭─</ansimagenta> <ansimagenta><b>👤 You</b></ansimagenta>\n'
+                '<ansimagenta>╰─❯</ansimagenta> '
+            )
+            user_input = session.prompt(prompt_html)
             if user_input.lower() in ['exit', 'quit']:
                 break
             if not user_input.strip():
@@ -256,7 +271,7 @@ def main():
             messages.append({"role": "user", "content": user_input})
             
             while True:
-                with console.status("[bold cyan]🧠 Thinking...[/bold cyan]", spinner="dots"):
+                with console.status("[bold magenta]✦ Thinking...[/bold magenta]", spinner="dots"):
                     response = client.chat.completions.create(
                         model=MODEL,
                         messages=messages,
@@ -268,7 +283,14 @@ def main():
                 
                 # If there's content to display, show it
                 if response_message.content:
-                    console.print(Markdown(response_message.content))
+                    console.print()
+                    console.print(Panel(
+                        Markdown(response_message.content),
+                        title="[bold magenta]✦ Aether[/bold magenta]",
+                        title_align="left",
+                        border_style="magenta",
+                        padding=(1, 2)
+                    ))
                     console.print()
                 
                 # If there are no tool calls, we are done with this turn
