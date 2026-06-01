@@ -3,10 +3,12 @@
 Aether is a sleek, intelligent AI coding assistant that runs directly in your terminal. It helps you code, reads your files, and can run commands for you—all from a beautifully designed CLI interface.
 
 ## Features
-- **Sleek CLI:** A beautifully styled terminal UI with custom ASCII art and magenta accents.
-- **Context Awareness:** Automatically read and inject your project's files into the prompt using `@filename`.
-- **Tool Integration:** Can read/write files and execute shell commands right from the terminal.
-- **Powered by OpenRouter:** By default, it connects to top-tier models (like Nemotron-120B) for free, via OpenRouter.
+- **Sleek CLI & Streaming:** Beautifully styled terminal UI with custom ASCII art, magenta accents, and real-time streaming responses.
+- **Slash Commands:** Switch models or clear context on-the-fly using commands like `/model`, `/clear`, and `/help`.
+- **Smart Autocomplete:** Respects `.gitignore` and filters out boilerplate folders (like `node_modules`, `venv`, `.git`) when attaching files with `@`.
+- **Workspace Exploration Tools:** Dynamic workspace listing (`list_directory`) and semantic searches (`grep_search`) let the agent study the workspace.
+- **Interactive Diff Previews:** Color-coded diff verification (green additions, red deletions) before any file write operations.
+- **Flexible Configuration:** Set custom models, keys, and base URLs (supporting local Ollama, Gemini, Anthropic, or OpenAI).
 
 ## Installation
 
@@ -45,10 +47,22 @@ Simply run:
 aether
 ```
 
-When you first launch Aether, you'll be prompted to provide your [OpenRouter API key](https://openrouter.ai/keys).
+When you first launch Aether, you'll be prompted to provide your [OpenRouter API key](https://openrouter.ai/keys). It will be saved securely in `~/.aether_config.json`.
+
+### Command Line Arguments
+- `--version` - View the current version of Aether.
+- `--model <model_name>` - Override the active model for this session.
+- `--reset-key` - Reset/clear the saved API key.
+- `--set-base-url <url>` - Set a custom API base URL (e.g. `http://localhost:11434/v1` for local Ollama).
+
+### Slash Commands
+Inside the interactive session, you can run:
+*   `/model <name>` - View or switch the active model on the fly.
+*   `/clear` - Clear the current conversation history.
+*   `/help` - Show the interactive help screen.
 
 ### Attaching Files
-Type `@` followed by a filename to give Aether context about your code:
+Type `@` followed by a filename to give Aether context about your code (autocomplete will automatically filter files ignored by git):
 ```
 👤 You
 ❯ Can you refactor @aether.py to use async?

@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+if [ -d "venv" ]; then
+    echo "🔌 Activating virtual environment..."
+    source venv/bin/activate
+fi
+
 echo "🚀 Starting the Aether release process..."
 
 echo "----------------------------------------"
