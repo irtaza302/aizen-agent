@@ -3,6 +3,7 @@ import json
 import subprocess
 import re
 import glob
+import getpass
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import HTML
@@ -17,13 +18,50 @@ from rich.text import Text
 from rich.align import Align
 from rich.rule import Rule
 
-# Load environment variables
-load_dotenv()
+def get_api_key():
+    config_path = os.path.expanduser("~/.aether_config.json")
+    
+    # 1. Try to load from config file
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+                key = config.get("OPENROUTER_API_KEY")
+                if key:
+                    return key
+        except Exception:
+            pass
+            
+    # 2. Fallback to .env for backward compatibility
+    load_dotenv()
+    env_key = os.getenv("OPENROUTER_API_KEY")
+    if env_key and env_key != "your_api_key_here":
+        return env_key
+        
+    # 3. Prompt user if no key found
+    console = Console()
+    console.print("\n[bold yellow]Welcome to Aether! 🚀[/bold yellow]")
+    console.print("It looks like this is your first time running the agent.")
+    console.print("To get started, please enter your OpenRouter API key.")
+    console.print("(Get one at https://openrouter.ai/keys)\n")
+    
+    key = getpass.getpass("API Key: ").strip()
+    
+    if not key:
+        console.print("[bold red]Error:[/bold red] API Key cannot be empty.")
+        exit(1)
+        
+    # Save key
+    try:
+        with open(config_path, 'w') as f:
+            json.dump({"OPENROUTER_API_KEY": key}, f)
+        console.print(f"[green]✓ API key securely saved to {config_path}[/green]\n")
+    except Exception as e:
+        console.print(f"[yellow]⚠️ Could not save config file: {e}[/yellow]\n")
+        
+    return key
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "your_api_key_here":
-    print("Error: Please set your OPENROUTER_API_KEY in the .env file.")
-    exit(1)
+OPENROUTER_API_KEY = get_api_key()
 
 # Initialize OpenAI client pointing to OpenRouter
 client = OpenAI(
