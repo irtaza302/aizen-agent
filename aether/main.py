@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Aether AI Agent v2.0 — A professional-grade AI coding assistant for your terminal.
+Aether AI Agent v2.1 — A professional-grade AI coding assistant for your terminal.
 """
 
 import os
@@ -9,11 +9,12 @@ import re
 import json
 import random
 import argparse
+import time
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.filters import has_completions, completion_is_selected
-from openai import OpenAI
+from openai import OpenAI, AuthenticationError, RateLimitError as OpenAIRateLimitError, APITimeoutError, APIConnectionError as OpenAIConnectionError
 from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.text import Text
@@ -35,6 +36,14 @@ from .utils import TokenTracker, Struct
 from .session import save_session
 from .tools import tools, backup_manager, execute_tool
 from .commands import handle_slash_command, AetherCompleter
+from .context import ContextManager
+
+
+# ─── Retry Configuration ───────────────────────────────────────────────────────
+
+MAX_API_RETRIES = 3
+RETRY_BACKOFF_BASE = 2.0
+RETRYABLE_ERRORS = (OpenAIRateLimitError, APITimeoutError, OpenAIConnectionError)
 
 
 def inject_file_context(user_input: str) -> str:
@@ -89,6 +98,41 @@ def parse_args():
     return parser.parse_args()
 
 
+def _create_api_stream(client, messages, model):
+    """
+    Create a streaming API call with retry logic for transient errors.
+    Returns the stream generator on success, raises on permanent failure.
+    """
+    last_exception: BaseException = RuntimeError("API retries exhausted")
+
+    for attempt in range(MAX_API_RETRIES + 1):
+        try:
+            stream = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                stream=True,
+                stream_options={"include_usage": True},
+            )
+            return stream
+        except RETRYABLE_ERRORS as e:
+            last_exception = e
+            if attempt < MAX_API_RETRIES:
+                delay = RETRY_BACKOFF_BASE ** attempt
+                retry_msg = Text()
+                retry_msg.append("  ⏳ ", style="yellow")
+                retry_msg.append(f"{type(e).__name__}. ", style="dim")
+                retry_msg.append(
+                    f"Retrying in {delay:.0f}s... ({attempt + 1}/{MAX_API_RETRIES})",
+                    style="dim italic",
+                )
+                console.print(retry_msg)
+                time.sleep(delay)
+
+    raise last_exception
+
+
 def main():
     args = parse_args()
 
@@ -117,12 +161,13 @@ def main():
     client = OpenAI(base_url=api_base, api_key=api_key)
 
     token_tracker = TokenTracker()
+    context_manager = ContextManager(get_active_model())
 
     # Cleanup old backups
     backup_manager.cleanup()
 
-    # Non-blocking update check
-    check_for_updates()
+    # Non-blocking update check (background thread, 24h cache)
+    check_for_updates(config)
 
     # ── Header ──
     console.print(AETHER_ASCII)
@@ -174,7 +219,7 @@ def main():
                 # Auto-save on exit
                 if len(messages) > 2:
                     try:
-                        save_session(messages, None, token_tracker)
+                        save_session(messages, token_tracker=token_tracker)
                         console.print("[dim]Session auto-saved.[/dim]")
                     except Exception:
                         pass
@@ -196,6 +241,15 @@ def main():
             else:
                 user_input = inject_file_context(user_input)
                 messages.append({"role": "user", "content": user_input})
+
+            # ── Context Window Check ──
+            estimated_total = context_manager.estimate_messages_tokens(
+                messages, token_tracker.estimate_tokens
+            )
+            context_manager.update(estimated_total)
+            warning = context_manager.check_and_warn()
+            if warning:
+                console.print(f"[yellow]{warning}[/yellow]\n")
 
             # ── Agent Loop ──────────────────────────────────────────────────
             while True:
@@ -223,15 +277,17 @@ def main():
                         console=console,
                         refresh_per_second=8,
                     ) as live:
-                        stream = client.chat.completions.create(
-                            model=get_active_model(),
-                            messages=messages,
-                            tools=tools,
-                            tool_choice="auto",
-                            stream=True,
+                        stream = _create_api_stream(
+                            client, messages, get_active_model()
                         )
 
+                        api_usage = None
+
                         for chunk in stream:
+                            # Parse API-reported usage from the final chunk
+                            if hasattr(chunk, "usage") and chunk.usage:
+                                api_usage = chunk.usage
+
                             delta = (
                                 chunk.choices[0].delta if chunk.choices else None
                             )
@@ -299,6 +355,38 @@ def main():
                                     )
                                     live.update(tool_text)
 
+                except AuthenticationError:
+                    console.print(
+                        "\n[bold red]Authentication Error:[/bold red] Invalid API key."
+                    )
+                    console.print(
+                        "[dim]Hint: Run with --reset-key to enter a new key.[/dim]"
+                    )
+                    break
+                except OpenAIRateLimitError:
+                    console.print(
+                        "\n[bold red]Rate Limited:[/bold red] Too many requests."
+                    )
+                    console.print(
+                        "[dim]Hint: Wait a moment and try again, or switch to a different model.[/dim]"
+                    )
+                    break
+                except APITimeoutError:
+                    console.print(
+                        "\n[bold red]Timeout:[/bold red] The request timed out."
+                    )
+                    console.print(
+                        "[dim]Hint: Check your internet connection and try again.[/dim]"
+                    )
+                    break
+                except OpenAIConnectionError:
+                    console.print(
+                        "\n[bold red]Connection Error:[/bold red] Could not reach the API."
+                    )
+                    console.print(
+                        "[dim]Hint: Check your internet connection or API base URL.[/dim]"
+                    )
+                    break
                 except Exception as e:
                     console.print(f"\n[bold red]API Error:[/bold red] {e}")
                     error_str = str(e).lower()
@@ -316,8 +404,16 @@ def main():
                         )
                     break
 
-                # Track tokens (estimate)
-                if full_content:
+                # Track tokens — prefer API-reported usage, fall back to estimation
+                if api_usage and hasattr(api_usage, "prompt_tokens"):
+                    token_tracker.add_api_usage(
+                        api_usage.prompt_tokens or 0,
+                        api_usage.completion_tokens or 0,
+                    )
+                    context_manager.update(
+                        (api_usage.prompt_tokens or 0) + (api_usage.completion_tokens or 0)
+                    )
+                elif full_content:
                     estimated_input = token_tracker.estimate_tokens(
                         json.dumps(messages[-1]) if messages else ""
                     )
@@ -342,7 +438,7 @@ def main():
                 # Add assistant message to history
                 assistant_msg = {
                     "role": "assistant",
-                    "content": full_content or None,
+                    "content": full_content or "",
                 }
                 if tool_calls_list:
                     assistant_msg["tool_calls"] = tool_calls_list
@@ -375,17 +471,27 @@ def main():
                 # Continue the loop — model processes tool results
 
             # ── Footer ──
+            footer = Text()
+            footer.append(
+                f"  tokens: ~{token_tracker.total_tokens:,}  │  "
+                f"messages: {token_tracker.message_count}  │  "
+                f"model: {get_active_model()}",
+                style="dim",
+            )
+            # Add context usage bar
+            footer.append("  │  ", style="dim")
             console.print(
                 f"[dim]  tokens: ~{token_tracker.total_tokens:,}  │  "
                 f"messages: {token_tracker.message_count}  │  "
-                f"model: {get_active_model()}[/dim]\n"
+                f"model: {get_active_model()}  │  "
+                f"{context_manager.get_footer_text()}[/dim]\n"
             )
 
         except (KeyboardInterrupt, EOFError):
             # Auto-save on interrupt
             if len(messages) > 2:
                 try:
-                    save_session(messages, None, token_tracker)
+                    save_session(messages, token_tracker=token_tracker)
                     console.print("\n[dim]Session auto-saved.[/dim]")
                 except Exception:
                     pass

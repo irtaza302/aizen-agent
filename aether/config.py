@@ -1,14 +1,16 @@
 import os
 import sys
 import json
+import time
 import getpass
+import threading
 import urllib.request
 from dotenv import load_dotenv
 from rich.console import Console
 
 # ─── Constants ──────────────────────────────────────────────────────────────────
 
-VERSION = "2.0.1"
+VERSION = "2.1.0"
 CONFIG_PATH = os.path.expanduser("~/.aether_config.json")
 SESSIONS_DIR = os.path.expanduser("~/.aether_sessions")
 BACKUPS_DIR = os.path.expanduser("~/.aether_backups")
@@ -132,17 +134,64 @@ def get_api_key(config: dict, reset: bool = False) -> str:
     return key
 
 
-def check_for_updates():
+# ─── Update Checker (Truly Non-Blocking) ────────────────────────────────────────
+
+# Cache TTL: only check PyPI once every 24 hours
+_UPDATE_CHECK_INTERVAL = 86400  # 24 hours in seconds
+
+
+def _should_check_updates(config: dict) -> bool:
+    """Determine if enough time has passed since the last update check."""
+    last_check = config.get("_last_update_check", 0)
+    return (time.time() - last_check) > _UPDATE_CHECK_INTERVAL
+
+
+def _do_update_check(config: dict):
+    """
+    Background thread target: fetch latest version from PyPI
+    and print a notice if an update is available.
+    """
     try:
         url = "https://pypi.org/pypi/aether-ai-cli/json"
         req = urllib.request.Request(url, headers={"User-Agent": "aether-ai-cli"})
-        with urllib.request.urlopen(req, timeout=0.8) as response:
+        with urllib.request.urlopen(req, timeout=3) as response:
             data = json.loads(response.read().decode())
             latest = data["info"]["version"]
+
+            # Update the last-check timestamp
+            config["_last_update_check"] = time.time()
+            config["_latest_version"] = latest
+            try:
+                save_config(config)
+            except Exception:
+                pass
+
             if latest != VERSION:
                 console.print(
-                    f"[bold magenta]🔔 Update available:[/bold magenta] v{latest}"
+                    f"\n[bold magenta]🔔 Update available:[/bold magenta] v{VERSION} → v{latest}"
                 )
                 console.print("[dim]Run: pip install -U aether-ai-cli[/dim]\n")
     except Exception:
-        pass
+        pass  # Silently fail — never block the user
+
+
+def check_for_updates(config: dict | None = None):
+    """
+    Launch a non-blocking background thread to check for updates.
+    Respects a 24-hour cache to avoid repeated network calls.
+    """
+    if config is None:
+        config = load_config()
+
+    if not _should_check_updates(config):
+        # Check if we have a cached latest version that's newer
+        cached = config.get("_latest_version")
+        if cached and cached != VERSION:
+            console.print(
+                f"[bold magenta]🔔 Update available:[/bold magenta] v{VERSION} → v{cached}"
+            )
+            console.print("[dim]Run: pip install -U aether-ai-cli[/dim]\n")
+        return
+
+    thread = threading.Thread(target=_do_update_check, args=(config,), daemon=True)
+    thread.start()

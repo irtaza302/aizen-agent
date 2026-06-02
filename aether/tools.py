@@ -6,9 +6,27 @@ import fnmatch
 import subprocess
 from rich.panel import Panel
 from rich.text import Text
+from rich.syntax import Syntax
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .config import console, SAFE_COMMAND_PREFIXES, DANGEROUS_PATTERNS
 from .utils import BackupManager, truncate_output, load_gitignore_patterns, should_ignore, Struct
+from .exceptions import FileOperationError, ToolExecutionError
+
+# ─── Constants ──────────────────────────────────────────────────────────────────
+
+MAX_FILE_SIZE_BYTES = 1_048_576  # 1 MB — refuse to read files larger than this
+MAX_FILE_SIZE_WARNING = 512_000  # 512 KB — warn but allow
+BINARY_EXTENSIONS = frozenset({
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".svg",
+    ".mp3", ".mp4", ".wav", ".avi", ".mov", ".mkv",
+    ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".exe", ".dll", ".so", ".dylib", ".bin", ".dat",
+    ".pyc", ".pyo", ".class", ".o", ".obj",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
+    ".sqlite", ".db",
+})
 
 # ─── Tools Definition ──────────────────────────────────────────────────────────
 
@@ -158,21 +176,128 @@ tools = [
 ]
 
 
+# ─── Helpers ────────────────────────────────────────────────────────────────────
+
+def _is_binary_file(filepath: str) -> bool:
+    """Check if a file is likely binary based on extension."""
+    _, ext = os.path.splitext(filepath.lower())
+    return ext in BINARY_EXTENSIONS
+
+
+def _detect_language(filepath: str) -> str:
+    """Detect Rich Syntax language from file extension for diff highlighting."""
+    ext_map = {
+        ".py": "python", ".js": "javascript", ".ts": "typescript",
+        ".jsx": "jsx", ".tsx": "tsx", ".html": "html", ".css": "css",
+        ".json": "json", ".yaml": "yaml", ".yml": "yaml", ".toml": "toml",
+        ".md": "markdown", ".rs": "rust", ".go": "go", ".java": "java",
+        ".c": "c", ".cpp": "cpp", ".h": "c", ".hpp": "cpp",
+        ".rb": "ruby", ".php": "php", ".sh": "bash", ".bash": "bash",
+        ".zsh": "bash", ".sql": "sql", ".xml": "xml", ".swift": "swift",
+        ".kt": "kotlin", ".scala": "scala", ".r": "r",
+        ".dockerfile": "dockerfile", ".tf": "hcl",
+    }
+    _, ext = os.path.splitext(filepath.lower())
+    basename = os.path.basename(filepath).lower()
+    if basename in ("dockerfile", "makefile", "gemfile", "rakefile"):
+        return basename
+    return ext_map.get(ext, "text")
+
+
+def _render_diff(diff_lines: list[str], filepath: str) -> None:
+    """Render a unified diff with syntax highlighting."""
+    diff_text = ""
+    for line in diff_lines:
+        diff_text += line if line.endswith("\n") else line + "\n"
+
+    if diff_text.strip():
+        syntax = Syntax(
+            diff_text,
+            "diff",
+            theme="monokai",
+            line_numbers=True,
+            word_wrap=True,
+        )
+        console.print(syntax)
+
+
+def _try_repair_json(raw: str) -> dict | None:
+    """
+    Attempt to repair common JSON issues from LLM tool calls:
+    - Trailing commas
+    - Single quotes
+    - Unquoted keys
+    """
+    # Try as-is first
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # Strip trailing commas before } or ]
+    repaired = re.sub(r",\s*([}\]])", r"\1", raw)
+    try:
+        return json.loads(repaired)
+    except json.JSONDecodeError:
+        pass
+
+    # Replace single quotes with double quotes (naive, but catches simple cases)
+    repaired = raw.replace("'", '"')
+    repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
+    try:
+        return json.loads(repaired)
+    except json.JSONDecodeError:
+        pass
+
+    return None
+
+
 # ─── Tool Implementations ──────────────────────────────────────────────────────
 
 backup_manager = BackupManager()
 
 def read_file(filepath: str) -> str:
+    """Read file contents with safety checks for size and binary detection."""
     try:
+        if not os.path.exists(filepath):
+            return f"Error: File '{filepath}' does not exist."
+
+        # Binary file check
+        if _is_binary_file(filepath):
+            return (
+                f"Error: '{filepath}' appears to be a binary file. "
+                f"Binary files cannot be read as text."
+            )
+
+        # File size check
+        file_size = os.path.getsize(filepath)
+        if file_size > MAX_FILE_SIZE_BYTES:
+            size_mb = file_size / (1024 * 1024)
+            return (
+                f"Error: File '{filepath}' is too large ({size_mb:.1f} MB). "
+                f"Maximum allowed size is {MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB. "
+                f"Use `run_command` with `head -n 100 {filepath}` to preview."
+            )
+
+        if file_size > MAX_FILE_SIZE_WARNING:
+            size_kb = file_size / 1024
+            console.print(
+                f"  [yellow]⚠️  Large file: {filepath} ({size_kb:.0f} KB)[/yellow]"
+            )
+
         with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
             content = f.read()
+
         line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
-        return f"[File: {filepath} | {line_count} lines]\n{content}"
+        return f"[File: {filepath} | {line_count} lines | {file_size:,} bytes]\n{content}"
+    except PermissionError:
+        return f"Error: Permission denied reading '{filepath}'."
     except Exception as e:
         return f"Error reading file: {e}"
 
 
-def write_file_with_diff(filepath: str, content: str) -> str:
+def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False) -> str:
+    """Write/overwrite a file with diff preview and optional auto-approval."""
     try:
         old_content = ""
         exists = os.path.exists(filepath)
@@ -203,32 +328,29 @@ def write_file_with_diff(filepath: str, content: str) -> str:
                     border_style="magenta",
                 )
             )
-            for line in diff:
-                if line.startswith("+") and not line.startswith("+++"):
-                    console.print(f"[green]{line.rstrip()}[/green]")
-                elif line.startswith("-") and not line.startswith("---"):
-                    console.print(f"[red]{line.rstrip()}[/red]")
-                elif line.startswith("@@"):
-                    console.print(f"[cyan]{line.rstrip()}[/cyan]")
-                else:
-                    console.print(line.rstrip())
+            _render_diff(diff, filepath)
         else:
             preview_lines = content.split("\n")[:15]
             preview = "\n".join(preview_lines)
             total_lines = len(content.split("\n"))
             if total_lines > 15:
                 preview += f"\n... ({total_lines} total lines)"
+
             console.print(
                 Panel(
-                    f"[bold magenta]Aether wants to create:[/bold magenta] [cyan]{filepath}[/cyan]\n\n"
-                    f"[dim]{preview}[/dim]",
+                    f"[bold magenta]Aether wants to create:[/bold magenta] [cyan]{filepath}[/cyan]",
                     border_style="magenta",
                 )
             )
+            lang = _detect_language(filepath)
+            syntax = Syntax(preview, lang, theme="monokai", line_numbers=True)
+            console.print(syntax)
 
-        confirmation = input("  Allow? (y/n): ").strip().lower()
-        if confirmation != "y":
-            return "User denied file write operation."
+        # YOLO mode: skip confirmation
+        if not auto_approve:
+            confirmation = input("  Allow? (y/n): ").strip().lower()
+            if confirmation != "y":
+                return "User denied file write operation."
 
         # Create backup before overwriting
         if exists:
@@ -242,7 +364,8 @@ def write_file_with_diff(filepath: str, content: str) -> str:
         return f"Error writing file: {e}"
 
 
-def edit_file(filepath: str, old_content: str, new_content: str) -> str:
+def edit_file(filepath: str, old_content: str, new_content: str, auto_approve: bool = False) -> str:
+    """Surgical edit with diff preview and optional auto-approval."""
     try:
         if not os.path.exists(filepath):
             return f"Error: File '{filepath}' does not exist. Use write_file to create new files."
@@ -293,19 +416,13 @@ def edit_file(filepath: str, old_content: str, new_content: str) -> str:
                 border_style="magenta",
             )
         )
-        for line in diff:
-            if line.startswith("+") and not line.startswith("+++"):
-                console.print(f"[green]{line.rstrip()}[/green]")
-            elif line.startswith("-") and not line.startswith("---"):
-                console.print(f"[red]{line.rstrip()}[/red]")
-            elif line.startswith("@@"):
-                console.print(f"[cyan]{line.rstrip()}[/cyan]")
-            else:
-                console.print(line.rstrip())
+        _render_diff(diff, filepath)
 
-        confirmation = input("  Apply edit? (y/n): ").strip().lower()
-        if confirmation != "y":
-            return "User denied the edit."
+        # YOLO mode: skip confirmation
+        if not auto_approve:
+            confirmation = input("  Apply edit? (y/n): ").strip().lower()
+            if confirmation != "y":
+                return "User denied the edit."
 
         # Create backup
         backup_manager.backup(filepath)
@@ -335,7 +452,8 @@ def is_command_safe(command: str) -> bool:
     return False
 
 
-def run_command_impl(command: str, auto_approve: bool = False) -> str:
+def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 120) -> str:
+    """Execute a shell command with safety checks and configurable timeout."""
     safe = is_command_safe(command)
 
     if not safe and not auto_approve:
@@ -358,7 +476,7 @@ def run_command_impl(command: str, auto_approve: bool = False) -> str:
             text=True,
             capture_output=True,
             check=False,
-            timeout=120,
+            timeout=timeout,
         )
         output = ""
         if result.stdout:
@@ -372,7 +490,7 @@ def run_command_impl(command: str, auto_approve: bool = False) -> str:
             output += f"\n[Exit code: {result.returncode}]"
         return output.strip() if output.strip() else f"Command completed (exit code {result.returncode})"
     except subprocess.TimeoutExpired:
-        return "Error: Command timed out after 120 seconds."
+        return f"Error: Command timed out after {timeout} seconds."
     except Exception as e:
         return f"Error executing command: {e}"
 
@@ -452,6 +570,8 @@ def grep_search(query: str, path: str = ".", is_regex: bool = False) -> str:
                 file_path = os.path.join(root, file)
                 if should_ignore(file_path, ignore_patterns):
                     continue
+                if _is_binary_file(file_path):
+                    continue
                 try:
                     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                         for line_num, line in enumerate(f, 1):
@@ -519,57 +639,87 @@ def find_files(pattern: str, path: str = ".") -> str:
 # ─── Tool Dispatcher ───────────────────────────────────────────────────────────
 
 def execute_tool(tool_call, auto_approve: bool = False) -> str:
+    """
+    Dispatch and execute a tool call from the AI model.
+
+    Handles JSON parsing with repair, auto_approve passthrough,
+    and configurable timeouts.
+    """
     func_name = tool_call.function.name
+    raw_args = tool_call.function.arguments
+
+    # Parse arguments with repair fallback
     try:
-        args = json.loads(tool_call.function.arguments)
+        args = json.loads(raw_args)
     except json.JSONDecodeError:
-        return "Error: Invalid JSON in tool arguments."
+        # Attempt JSON repair
+        args = _try_repair_json(raw_args)
+        if args is None:
+            console.print(
+                f"  [yellow]⚠️  Malformed JSON from model for {func_name}[/yellow]"
+            )
+            return (
+                f"Error: Invalid JSON in tool arguments for '{func_name}'. "
+                f"Please retry with valid JSON. The arguments received were: "
+                f"{raw_args[:200]}{'...' if len(raw_args) > 200 else ''}"
+            )
+        else:
+            console.print(
+                f"  [dim yellow]⚠️  Repaired malformed JSON for {func_name}[/dim yellow]"
+            )
 
     tool_label = Text("  ⚙️  ", style="magenta")
     tool_label.append(func_name, style="dim magenta")
 
     if func_name == "read_file":
-        tool_label.append(f" → {args.get('filepath', '?')}", style="dim")
+        filepath = str(args.get("filepath", ""))
+        tool_label.append(f" → {filepath or '?'}", style="dim")
         console.print(tool_label)
-        return truncate_output(read_file(args.get("filepath")))
+        return truncate_output(read_file(filepath))
 
     elif func_name == "write_file":
-        tool_label.append(f" → {args.get('filepath', '?')}", style="dim")
+        filepath = str(args.get("filepath", ""))
+        content = str(args.get("content", ""))
+        tool_label.append(f" → {filepath or '?'}", style="dim")
         console.print(tool_label)
-        return write_file_with_diff(args.get("filepath"), args.get("content"))
+        return write_file_with_diff(filepath, content, auto_approve=auto_approve)
 
     elif func_name == "edit_file":
-        tool_label.append(f" → {args.get('filepath', '?')}", style="dim")
+        filepath = str(args.get("filepath", ""))
+        old_content = str(args.get("old_content", ""))
+        new_content = str(args.get("new_content", ""))
+        tool_label.append(f" → {filepath or '?'}", style="dim")
         console.print(tool_label)
-        return edit_file(
-            args.get("filepath"), args.get("old_content"), args.get("new_content")
-        )
+        return edit_file(filepath, old_content, new_content, auto_approve=auto_approve)
 
     elif func_name == "run_command":
-        tool_label.append(f" → {args.get('command', '?')}", style="dim")
+        command = str(args.get("command", ""))
+        tool_label.append(f" → {command or '?'}", style="dim")
         console.print(tool_label)
-        return truncate_output(run_command_impl(args.get("command"), auto_approve))
+        return truncate_output(run_command_impl(command, auto_approve))
 
     elif func_name == "list_directory":
-        p = args.get("path", ".")
+        p = str(args.get("path", "."))
         tool_label.append(f" → {p}", style="dim")
         console.print(tool_label)
         return truncate_output(list_directory(p))
 
     elif func_name == "grep_search":
-        tool_label.append(f" → '{args.get('query', '?')}'", style="dim")
+        query = str(args.get("query", ""))
+        path = str(args.get("path", "."))
+        is_regex = bool(args.get("is_regex", False))
+        tool_label.append(f" → '{query or '?'}'", style="dim")
         console.print(tool_label)
-        return truncate_output(
-            grep_search(args.get("query"), args.get("path", "."), args.get("is_regex", False))
-        )
+        return truncate_output(grep_search(query, path, is_regex))
 
     elif func_name == "find_files":
-        tool_label.append(f" → {args.get('pattern', '?')}", style="dim")
+        pattern = str(args.get("pattern", ""))
+        path = str(args.get("path", "."))
+        tool_label.append(f" → {pattern or '?'}", style="dim")
         console.print(tool_label)
-        return truncate_output(
-            find_files(args.get("pattern"), args.get("path", "."))
-        )
+        return truncate_output(find_files(pattern, path))
 
     else:
         console.print(tool_label)
         return f"Unknown tool: {func_name}"
+
