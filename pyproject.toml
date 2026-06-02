@@ -1,10 +1,10 @@
 [build-system]
 requires = ["setuptools>=61.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "aether-ai-cli"
-version = "2.1.0"
+version = "2.1.2"
 description = "Aether AI Agent — A professional-grade AI coding assistant for your terminal."
 readme = "README.md"
 license = {text = "MIT"}
