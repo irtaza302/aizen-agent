@@ -7,7 +7,7 @@ from .config import SESSIONS_DIR
 from .utils import TokenTracker
 
 def save_session(
-    messages: list, name: str = None, token_tracker: TokenTracker = None
+    messages: list, name: str | None = None, token_tracker: TokenTracker | None = None
 ) -> str:
     os.makedirs(SESSIONS_DIR, exist_ok=True)
 
@@ -18,7 +18,8 @@ def save_session(
     name = re.sub(r"[^\w\-]", "_", name)
     filepath = os.path.join(SESSIONS_DIR, f"{name}.json")
 
-    session_data = {
+    from typing import Any
+    session_data: dict[str, Any] = {
         "name": name,
         "saved_at": datetime.now().isoformat(),
         "message_count": len(messages),

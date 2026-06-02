@@ -31,6 +31,7 @@ SLASH_COMMANDS = [
     ("/copy", "Copy last AI response to clipboard"),
     ("/export", "Export conversation to Markdown"),
     ("/config", "View current configuration"),
+    ("/mcp", "View configured MCP servers and their status"),
 ]
 
 
@@ -110,7 +111,7 @@ class AetherCompleter(Completer):
 
 
 def handle_slash_command(
-    command_str: str, messages: list, token_tracker: TokenTracker
+    command_str: str, messages: list, token_tracker: TokenTracker, mcp_manager=None
 ) -> bool:
     """Handle slash commands. Returns True if the agent loop should re-process (e.g. /retry)."""
     parts = command_str.split(maxsplit=1)
@@ -155,6 +156,7 @@ def handle_slash_command(
         help_table.add_row("/copy", "Copy last AI response to clipboard")
         help_table.add_row("/export [file]", "Export conversation to Markdown")
         help_table.add_row("/config", "View current configuration")
+        help_table.add_row("/mcp", "View configured MCP servers and their status")
         help_table.add_row("", "")
         help_table.add_row("@filename", "Attach file context (with autocomplete)")
         help_table.add_row("exit / quit", "Exit Aether")
@@ -328,6 +330,57 @@ def handle_slash_command(
         table.add_row("Config File", CONFIG_PATH)
         table.add_row("Sessions Dir", SESSIONS_DIR)
         table.add_row("Backups Dir", BACKUPS_DIR)
+        console.print(table)
+        console.print()
+
+    elif cmd == "/mcp":
+        if not mcp_manager:
+            console.print("[yellow]MCP Manager is not available.[/yellow]\n")
+            return False
+            
+        if not mcp_manager.config:
+            console.print("[yellow]No MCP servers configured in ~/.aether_config.json[/yellow]\n")
+            console.print("[dim]Add an 'mcp_servers' block to your config to enable MCP plugins.[/dim]\n")
+            return False
+            
+        table = Table(
+            title="🔌 Configured MCP Servers",
+            border_style="magenta",
+            header_style="bold magenta",
+        )
+        table.add_column("Server Name", style="cyan bold")
+        table.add_column("Status", style="white")
+        table.add_column("Tools Available", style="dim")
+        
+        tools = mcp_manager.get_tools()
+        server_tools = {srv: [] for srv in mcp_manager.config.keys()}
+        
+        for t in tools:
+            name = t["function"]["name"]
+            for server_name in mcp_manager.config.keys():
+                prefix = f"mcp_{server_name}_"
+                if name.startswith(prefix):
+                    server_tools[server_name].append(name[len(prefix):])
+                    break
+                    
+        for server_name in mcp_manager.config.keys():
+            if server_name in mcp_manager.sessions:
+                status = "[green]Connected[/green]"
+            else:
+                status = "[red]Disconnected / Failed[/red]"
+            
+            tool_count = len(server_tools[server_name])
+            if tool_count > 0:
+                tool_list = ", ".join(server_tools[server_name])
+                # Truncate if too long
+                if len(tool_list) > 50:
+                    tool_list = tool_list[:47] + "..."
+                tools_display = f"{tool_count} tools: {tool_list}"
+            else:
+                tools_display = "0 tools"
+                
+            table.add_row(server_name, status, tools_display)
+            
         console.print(table)
         console.print()
 

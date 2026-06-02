@@ -247,7 +247,7 @@ def main():
             # ── Slash Commands ──
             if user_input.strip().startswith("/"):
                 should_retry = handle_slash_command(
-                    user_input.strip(), messages, token_tracker
+                    user_input.strip(), messages, token_tracker, mcp_manager
                 )
                 if should_retry and messages and messages[-1]["role"] == "user":
                     pass  # Fall through to the agent loop
