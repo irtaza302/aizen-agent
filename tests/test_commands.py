@@ -8,71 +8,72 @@ from aether.commands import handle_slash_command, AetherCompleter
 from aether.utils import TokenTracker
 
 
+@pytest.mark.asyncio
 class TestSlashCommands:
     """Tests for slash command handling."""
 
-    def test_clear_command(self):
+    async def test_clear_command(self):
         messages = [
             {"role": "system", "content": "system prompt"},
             {"role": "user", "content": "hello"},
             {"role": "assistant", "content": "hi"},
         ]
-        result = handle_slash_command("/clear", messages, TokenTracker())
+        result = await handle_slash_command("/clear", messages, TokenTracker())
         assert result is False
         assert len(messages) == 1
         assert messages[0]["role"] == "system"
 
-    def test_model_view(self):
+    async def test_model_view(self):
         """Test /model without arguments shows current model."""
-        result = handle_slash_command("/model", [], TokenTracker())
+        result = await handle_slash_command("/model", [], TokenTracker())
         assert result is False
 
-    def test_model_switch(self):
+    async def test_model_switch(self):
         """Test /model with argument switches model."""
         from aether.config import get_active_model, set_active_model
         original = get_active_model()
         try:
-            handle_slash_command("/model test/new-model", [], TokenTracker())
+            await handle_slash_command("/model test/new-model", [], TokenTracker())
             assert get_active_model() == "test/new-model"
         finally:
             set_active_model(original)
 
-    def test_help_command(self):
+    async def test_help_command(self):
         """Test /help runs without error."""
-        result = handle_slash_command("/help", [], TokenTracker())
+        result = await handle_slash_command("/help", [], TokenTracker())
         assert result is False
 
-    def test_usage_command(self):
+    async def test_usage_command(self):
         """Test /usage runs without error."""
         tracker = TokenTracker()
         tracker.add_usage(100, 50)
-        result = handle_slash_command("/usage", [], tracker)
+        result = await handle_slash_command("/usage", [], tracker)
         assert result is False
 
-    def test_retry_with_user_message(self):
+    async def test_retry_with_user_message(self):
         messages = [
             {"role": "system", "content": "system"},
             {"role": "user", "content": "test"},
             {"role": "assistant", "content": "response"},
         ]
-        result = handle_slash_command("/retry", messages, TokenTracker())
+        result = await handle_slash_command("/retry", messages, TokenTracker())
         assert result is True
         assert messages[-1]["role"] == "user"
 
-    def test_retry_no_messages(self):
+    async def test_retry_no_messages(self):
         messages = [{"role": "system", "content": "system"}]
-        result = handle_slash_command("/retry", messages, TokenTracker())
+        result = await handle_slash_command("/retry", messages, TokenTracker())
         assert result is False
 
-    def test_compact_short_conversation(self):
+    async def test_compact_short_conversation(self):
         messages = [
             {"role": "system", "content": "system"},
             {"role": "user", "content": "hello"},
         ]
-        result = handle_slash_command("/compact", messages, TokenTracker())
+        result = await handle_slash_command("/compact", messages, TokenTracker())
         assert result is False
 
-    def test_compact_long_conversation(self):
+    async def test_compact_long_conversation(self):
         messages = [
             {"role": "system", "content": "system"},
             {"role": "user", "content": "question 1"},
@@ -85,31 +86,31 @@ class TestSlashCommands:
             {"role": "assistant", "content": "answer 4"},
         ]
         original_len = len(messages)
-        handle_slash_command("/compact", messages, TokenTracker())
+        await handle_slash_command("/compact", messages, TokenTracker())
         assert len(messages) < original_len
 
-    def test_unknown_command(self):
-        result = handle_slash_command("/nonexistent", [], TokenTracker())
+    async def test_unknown_command(self):
+        result = await handle_slash_command("/nonexistent", [], TokenTracker())
         assert result is False
 
-    def test_config_command(self):
+    async def test_config_command(self):
         """Test /config runs without error."""
-        result = handle_slash_command("/config", [], TokenTracker())
+        result = await handle_slash_command("/config", [], TokenTracker())
         assert result is False
 
-    def test_undo_command(self):
+    async def test_undo_command(self):
         """Test /undo runs without error."""
-        result = handle_slash_command("/undo", [], TokenTracker())
+        result = await handle_slash_command("/undo", [], TokenTracker())
         assert result is False
 
-    def test_export_command(self, tmp_dir):
+    async def test_export_command(self, tmp_dir):
         messages = [
             {"role": "system", "content": "system"},
             {"role": "user", "content": "hello"},
             {"role": "assistant", "content": "hi"},
         ]
         export_path = os.path.join(tmp_dir, "export.md")
-        result = handle_slash_command(
+        result = await handle_slash_command(
             f"/export {export_path}", messages, TokenTracker()
         )
         assert result is False

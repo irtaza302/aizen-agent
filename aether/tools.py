@@ -24,6 +24,31 @@ from typing import Any
 # task_id -> {"process": Popen, "stdout": list, "stderr": list, "command": str}
 background_tasks: dict[str, dict[str, Any]] = {}
 
+terminal_lock = threading.Lock()
+
+def fuzzy_match_file(filepath: str) -> str | None:
+    """
+    If the exact filepath does not exist, searches the current directory tree
+    for a close match. Returns the matched path or None.
+    """
+    if not filepath or filepath.startswith("/") or filepath.startswith("~"):
+        return None  # Only fuzzy match relative paths safely
+        
+    ignore_patterns = load_gitignore_patterns()
+    all_files = []
+    
+    # Collect all available files in the tree
+    for root, dirs, files in os.walk("."):
+        dirs[:] = [d for d in dirs if not should_ignore(os.path.join(root, d), ignore_patterns)]
+        for f in files:
+            path = os.path.relpath(os.path.join(root, f), ".")
+            if not should_ignore(path, ignore_patterns):
+                all_files.append(path)
+                
+    # Use difflib to find the closest match
+    matches = difflib.get_close_matches(filepath, all_files, n=1, cutoff=0.75)
+    return matches[0] if matches else None
+
 # ─── Constants ──────────────────────────────────────────────────────────────────
 
 MAX_FILE_SIZE_BYTES = 1_048_576  # 1 MB — refuse to read files larger than this
@@ -357,7 +382,12 @@ def read_file(filepath: str) -> str:
     logger.debug("read_file: %s", filepath)
     try:
         if not os.path.exists(filepath):
-            return f"Error: File '{filepath}' does not exist."
+            match = fuzzy_match_file(filepath)
+            if match:
+                console.print(f"  [dim yellow]⚠️  File '{filepath}' not found, fuzzy matched to '{match}'[/dim yellow]")
+                filepath = match
+            else:
+                return f"Error: File '{filepath}' does not exist."
 
         # Binary file check
         if _is_binary_file(filepath):
@@ -402,6 +432,12 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
         _check_git_dirty(filepath)
         old_content = ""
         exists = os.path.exists(filepath)
+        if not exists:
+            match = fuzzy_match_file(filepath)
+            if match:
+                console.print(f"  [dim yellow]⚠️  File '{filepath}' not found, fuzzy matched to '{match}'[/dim yellow]")
+                filepath = match
+                exists = True
 
         if exists:
             try:
@@ -449,7 +485,8 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
 
         # YOLO mode: skip confirmation
         if not auto_approve:
-            confirmation = input("  Allow? (y/n): ").strip().lower()
+            with terminal_lock:
+                confirmation = input("  Allow? (y/n): ").strip().lower()
             if confirmation != "y":
                 return "User denied file write operation."
 
@@ -471,7 +508,12 @@ def edit_file(filepath: str, old_content: str, new_content: str, auto_approve: b
     try:
         _check_git_dirty(filepath)
         if not os.path.exists(filepath):
-            return f"Error: File '{filepath}' does not exist. Use write_file to create new files."
+            match = fuzzy_match_file(filepath)
+            if match:
+                console.print(f"  [dim yellow]⚠️  File '{filepath}' not found, fuzzy matched to '{match}'[/dim yellow]")
+                filepath = match
+            else:
+                return f"Error: File '{filepath}' does not exist. Use write_file to create new files."
 
         with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
             file_content = f.read()
@@ -523,7 +565,8 @@ def edit_file(filepath: str, old_content: str, new_content: str, auto_approve: b
 
         # YOLO mode: skip confirmation
         if not auto_approve:
-            confirmation = input("  Apply edit? (y/n): ").strip().lower()
+            with terminal_lock:
+                confirmation = input("  Apply edit? (y/n): ").strip().lower()
             if confirmation != "y":
                 return "User denied the edit."
 
@@ -582,7 +625,8 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
                 border_style="magenta",
             )
         )
-        confirmation = input("  Allow? (y/n): ").strip().lower()
+        with terminal_lock:
+            confirmation = input("  Allow? (y/n): ").strip().lower()
         if confirmation != "y":
             return "User denied command execution."
     elif safe:

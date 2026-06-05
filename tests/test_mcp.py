@@ -12,9 +12,10 @@ def mock_mcp_config():
         }
     }
 
+@pytest.mark.asyncio
 @patch("aether.mcp.ClientSession")
 @patch("aether.mcp.stdio_client")
-def test_mcp_manager_start_and_tools(mock_stdio_client, mock_client_session, mock_mcp_config):
+async def test_mcp_manager_start_and_tools(mock_stdio_client, mock_client_session, mock_mcp_config):
     mock_transport = (AsyncMock(), AsyncMock())
     
     mock_stdio_cm = AsyncMock()
@@ -36,18 +37,19 @@ def test_mcp_manager_start_and_tools(mock_stdio_client, mock_client_session, moc
     mock_session.list_tools.return_value = mock_response
     
     manager = MCPManager(mock_mcp_config)
-    manager.start()
+    await manager.start()
     
     tools = manager.get_tools()
     assert len(tools) == 1
     assert tools[0]["function"]["name"] == "mcp_test_server_do_something"
     assert tools[0]["function"]["description"] == "Does something useful"
     
-    manager.stop()
+    await manager.stop()
 
+@pytest.mark.asyncio
 @patch("aether.mcp.ClientSession")
 @patch("aether.mcp.stdio_client")
-def test_mcp_manager_call_tool(mock_stdio_client, mock_client_session, mock_mcp_config):
+async def test_mcp_manager_call_tool(mock_stdio_client, mock_client_session, mock_mcp_config):
     mock_transport = (AsyncMock(), AsyncMock())
     mock_stdio_cm = AsyncMock()
     mock_stdio_cm.__aenter__.return_value = mock_transport
@@ -71,10 +73,10 @@ def test_mcp_manager_call_tool(mock_stdio_client, mock_client_session, mock_mcp_
     mock_session.call_tool.return_value = mock_result
     
     manager = MCPManager(mock_mcp_config)
-    manager.start()
+    await manager.start()
     
-    result = manager.call_tool("mcp_test_server_some_tool", {"arg1": "val1"})
+    result = await manager.call_tool("mcp_test_server_some_tool", {"arg1": "val1"})
     assert result == "Success!"
     mock_session.call_tool.assert_called_once_with("some_tool", arguments={"arg1": "val1"})
     
-    manager.stop()
+    await manager.stop()

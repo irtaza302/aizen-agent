@@ -116,7 +116,7 @@ class AetherCompleter(Completer):
                 logger.debug("Failed to list current directory for autocomplete: %s", e)
 
 
-def handle_slash_command(
+async def handle_slash_command(
     command_str: str, messages: list, token_tracker: TokenTracker, mcp_manager=None
 ) -> bool:
     """Handle slash commands. Returns True if the agent loop should re-process (e.g. /retry)."""
@@ -297,12 +297,12 @@ def handle_slash_command(
                 # Attempt LLM-based summarization for much better context retention
                 console.print("[dim]Summarizing conversation with AI...[/dim]")
                 try:
-                    from openai import OpenAI as _OpenAI
+                    from openai import AsyncOpenAI as _AsyncOpenAI
 
                     _config = load_config()
                     _api_key = _config.get("OPENROUTER_API_KEY", "")
                     _api_base = _config.get("API_BASE_URL", "https://openrouter.ai/api/v1")
-                    _client = _OpenAI(base_url=_api_base, api_key=_api_key)
+                    _client = _AsyncOpenAI(base_url=_api_base, api_key=_api_key)
 
                     # Build a summarization request from the middle messages
                     summary_messages = [
@@ -325,7 +325,7 @@ def handle_slash_command(
                         },
                     ]
 
-                    response = _client.chat.completions.create(
+                    response = await _client.chat.completions.create(
                         model=get_active_model(),
                         messages=summary_messages,  # type: ignore
                         max_tokens=1000,

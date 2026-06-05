@@ -9,11 +9,12 @@ import re
 import json
 import random
 import argparse
+import asyncio
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.filters import has_completions, completion_is_selected
-from openai import OpenAI, AuthenticationError, RateLimitError as OpenAIRateLimitError, APITimeoutError, APIConnectionError as OpenAIConnectionError
+from openai import AsyncOpenAI, AuthenticationError, RateLimitError as OpenAIRateLimitError, APITimeoutError, APIConnectionError as OpenAIConnectionError
 from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.text import Text
@@ -100,14 +101,13 @@ def parse_args():
     )
     return parser.parse_args()
 
-
 @retry_with_backoff(max_retries=3, backoff_base=2.0)
-def _create_api_stream(client, messages, model, active_tools):
+async def _create_api_stream(client, messages, model, active_tools):
     """
     Create a streaming API call with retry logic for transient errors.
     Retry is handled by the @retry_with_backoff decorator (with jitter).
     """
-    return client.chat.completions.create(
+    return await client.chat.completions.create(
         model=model,
         messages=messages,
         tools=active_tools,
@@ -115,9 +115,7 @@ def _create_api_stream(client, messages, model, active_tools):
         stream=True,
         stream_options={"include_usage": True},
     )
-
-
-def main():
+async def main_loop():
     args = parse_args()
 
     if args.version:
@@ -146,7 +144,7 @@ def main():
     api_base = config.get("API_BASE_URL", "https://openrouter.ai/api/v1")
     auto_approve = args.yolo
 
-    client = OpenAI(base_url=api_base, api_key=api_key)
+    client = AsyncOpenAI(base_url=api_base, api_key=api_key)
 
     token_tracker = TokenTracker()
     context_manager = ContextManager(get_active_model())
@@ -162,7 +160,7 @@ def main():
     mcp_manager = MCPManager(mcp_servers_config)
     if mcp_servers_config:
         console.print("[dim]Initializing MCP servers...[/dim]")
-        mcp_manager.start()
+        await mcp_manager.start()
 
     active_tools = tools + mcp_manager.get_tools() + plugin_manager.get_tools()
 
@@ -199,13 +197,13 @@ def main():
                 "<ansimagenta>╭─</ansimagenta> <ansimagenta><b>👤 You</b></ansimagenta>\n"
                 "<ansimagenta>╰─❯</ansimagenta> "
             )
-            first_line = session.prompt(prompt_html)
+            first_line = await session.prompt_async(prompt_html)
             lines.append(first_line)
 
             # Continue reading if line ends with backslash
             while lines[-1].rstrip().endswith("\\"):
                 lines[-1] = lines[-1].rstrip()[:-1]  # Remove trailing backslash
-                continuation = session.prompt(
+                continuation = await session.prompt_async(
                     HTML("<ansimagenta>  ⋮ </ansimagenta> ")
                 )
                 lines.append(continuation)
@@ -221,7 +219,7 @@ def main():
                     except Exception:
                         logger.exception("Failed to auto-save session on exit")
                 try:
-                    mcp_manager.stop()
+                    await mcp_manager.stop()
                 except Exception:
                     logger.exception("Failed to stop MCP manager on exit")
                 console.print("[yellow]Goodbye! 👋[/yellow]")
@@ -232,7 +230,7 @@ def main():
 
             # ── Slash Commands ──
             if user_input.strip().startswith("/"):
-                should_retry = handle_slash_command(
+                should_retry = await handle_slash_command(
                     user_input.strip(), messages, token_tracker, mcp_manager
                 )
                 if should_retry and messages and messages[-1]["role"] == "user":
@@ -278,13 +276,13 @@ def main():
                         console=console,
                         refresh_per_second=8,
                     ) as live:
-                        stream = _create_api_stream(
+                        stream = await _create_api_stream(
                             client, messages, get_active_model(), active_tools
                         )
 
                         api_usage = None
 
-                        for chunk in stream:
+                        async for chunk in stream:
                             # Parse API-reported usage from the final chunk
                             if hasattr(chunk, "usage") and chunk.usage:
                                 api_usage = chunk.usage
@@ -456,16 +454,15 @@ def main():
                 if not tool_calls_list:
                     break
 
-                # Execute tool calls
-                for tc_dict in tool_calls_list:
+                # Execute tool calls in parallel
+                async def _exec_tool(tc_dict):
                     func_name = tc_dict["function"]["name"]
-                    
                     if func_name.startswith("mcp_"):
                         try:
                             args = json.loads(tc_dict["function"]["arguments"])
-                            tool_result = mcp_manager.call_tool(func_name, args)
+                            result = await mcp_manager.call_tool(func_name, args)
                         except json.JSONDecodeError:
-                            tool_result = f"Error: Invalid JSON arguments for {func_name}."
+                            result = f"Error: Invalid JSON arguments for {func_name}."
                     else:
                         func_struct = Struct(**tc_dict["function"])
                         tc_struct = Struct(
@@ -473,16 +470,17 @@ def main():
                             type=tc_dict["type"],
                             function=func_struct,
                         )
-                        tool_result = execute_tool(tc_struct, auto_approve)
-
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tc_dict["id"],
-                            "name": tc_dict["function"]["name"],
-                            "content": tool_result,
-                        }
-                    )
+                        result = await asyncio.to_thread(execute_tool, tc_struct, auto_approve)
+                    
+                    return {
+                        "role": "tool",
+                        "tool_call_id": tc_dict["id"],
+                        "name": func_name,
+                        "content": truncate_output(result),
+                    }
+                
+                tool_results = await asyncio.gather(*[_exec_tool(tc) for tc in tool_calls_list])
+                messages.extend(tool_results)
 
                 # Continue the loop — model processes tool results
 
@@ -522,7 +520,7 @@ def main():
                 except Exception:
                     logger.exception("Failed to auto-save session on interrupt")
             try:
-                mcp_manager.stop()
+                await mcp_manager.stop()
             except Exception:
                 logger.exception("Failed to stop MCP manager on interrupt")
             console.print("[yellow]Goodbye! 👋[/yellow]")
@@ -533,4 +531,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main_loop())
