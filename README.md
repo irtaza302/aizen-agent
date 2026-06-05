@@ -84,7 +84,7 @@ npm install -g aizen-ai-cli
 
 ### 3. Homebrew (macOS)
 ```bash
-brew tap irtaza302/aizen-agent
+brew tap irtaza302/aizen
 brew install aizen
 ```
 
