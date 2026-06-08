@@ -29,16 +29,16 @@ except PackageNotFoundError:
 CONFIG_PATH = os.path.expanduser("~/.aizen_config.json")
 SESSIONS_DIR = os.path.expanduser("~/.aizen_sessions")
 BACKUPS_DIR = os.path.expanduser("~/.aizen_backups")
-DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
+DEFAULT_MODEL = "openrouter/free"
 
-AIZEN_ASCII = r"""[bold magenta]
-    _    _
-   / \  (_)_______ _ __
-  / _ \ | |_  / _ \ '_ \
- / ___ \| |/ /  __/ | | |
-/_/   \_\_/___\___|_| |_|
-[/bold magenta]
-    [dim]by Irtaza Malik[/dim]
+AIZEN_ASCII = r"""[bold #ffabf3]
+ █████╗ ██╗███████╗███████╗███╗   ██╗
+██╔══██╗██║╚══███╔╝██╔════╝████╗  ██║
+███████║██║  ███╔╝ █████╗  ██╔██╗ ██║
+██╔══██║██║ ███╔╝  ██╔══╝  ██║╚██╗██║
+██║  ██║██║███████╗███████╗██║ ╚████║
+╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═╝  ╚═══╝
+[/bold #ffabf3]
 """
 
 # Safe commands that auto-execute without confirmation
@@ -134,7 +134,7 @@ def build_system_prompt(config: dict | None = None) -> str:
                         f"The following rules are defined by the project maintainers "
                         f"(from {rules_file}):\n\n{project_rules}"
                     )
-                    console.print(f"  [dim]📋 Loaded project rules from {rules_file}[/dim]")
+                    console.print(f"[bold #ffabf3][SYSTEM][/bold #ffabf3] Project rules loaded from [#d3fbff]{rules_file}[/#d3fbff]")
                 break  # Only use the first rules file found
             except Exception as e:
                 logger.debug("Failed to load project rules from %s: %s", rules_file, e)

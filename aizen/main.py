@@ -14,15 +14,16 @@ import sys
 from typing import Any
 
 from openai import APIConnectionError as OpenAIConnectionError
-from openai import APITimeoutError, AsyncOpenAI, AuthenticationError
+from openai import APITimeoutError, AsyncOpenAI, AuthenticationError, BadRequestError
 from openai import RateLimitError as OpenAIRateLimitError
 from prompt_toolkit import PromptSession
 from prompt_toolkit.filters import completion_is_selected, has_completions
-from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.spinner import Spinner
 from rich.text import Text
 
 from .commands import AizenCompleter, handle_slash_command
@@ -212,16 +213,12 @@ async def main_loop():
 
     # ── Header ──
     console.print(AIZEN_ASCII)
-    header = Text()
-    header.append(f"v{VERSION}", style="bold magenta")
-    header.append("  │  ", style="dim")
-    header.append(get_active_model(), style="cyan")
+    console.print(f"[bold #ffabf3][SYSTEM][/bold #ffabf3] Initializing Aizen AI v{VERSION}...")
+    console.print(f"[bold #ffabf3][SYSTEM][/bold #ffabf3] Model: {get_active_model()}")
     if auto_approve:
-        header.append("  │  ", style="dim")
-        header.append("YOLO MODE", style="bold red")
-    console.print(header)
+        console.print("[bold #ffabf3][SYSTEM][/bold #ffabf3] Mode: YOLO")
     console.print(
-        "[dim]Type /help for commands  •  @file to attach  •  exit to quit[/dim]\n"
+        "\n[dim]Type /help for commands  •  @file to attach  •  exit to quit[/dim]\n"
     )
 
     # ── Keybindings ──
@@ -239,10 +236,12 @@ async def main_loop():
         try:
             # ── Multi-line Input ──
             lines = []
-            prompt_html = HTML(
-                "<ansimagenta>╭─</ansimagenta> <ansimagenta><b>👤 You</b></ansimagenta>\n"
-                "<ansimagenta>╰─❯</ansimagenta> "
-            )
+            prompt_html = FormattedText([
+                ("fg:#ffabf3", "➜"),
+                ("", " "),
+                ("fg:#d3fbff", "~"),
+                ("", " ")
+            ])
             first_line = await session.prompt_async(prompt_html)
             lines.append(first_line)
 
@@ -250,7 +249,7 @@ async def main_loop():
             while lines[-1].rstrip().endswith("\\"):
                 lines[-1] = lines[-1].rstrip()[:-1]  # Remove trailing backslash
                 continuation = await session.prompt_async(
-                    HTML("<ansimagenta>  ⋮ </ansimagenta> ")
+                    FormattedText([("", "  ")])
                 )
                 lines.append(continuation)
 
@@ -346,9 +345,7 @@ async def main_loop():
                         "Exploring...",
                     ]
                 )
-                spinner_display = Text()
-                spinner_display.append("  ✦ ", style="bold magenta")
-                spinner_display.append(spinner_label, style="dim italic")
+                spinner_display = Spinner("dots", text=Text(spinner_label, style="#8e8e93 italic"), style="#ffabf3 bold")
 
                 try:
                     with Live(
@@ -378,23 +375,14 @@ async def main_loop():
                                 full_content += delta.content
                                 # Live-render Markdown in a panel
                                 try:
-                                    rendered = Panel(
-                                        Markdown(full_content),
-                                        title="[bold magenta]✦ Aizen[/bold magenta]",
-                                        border_style="magenta",
-                                        padding=(1, 2),
-                                    )
+                                    # Prepend AIZEN: styling before the markdown
+                                    display_content = f"**AIZEN:** {full_content}"
+                                    rendered = Markdown(display_content)
                                     live.update(rendered)
                                 except Exception:
                                     # Fallback for incomplete markdown
-                                    live.update(
-                                        Panel(
-                                            Text(full_content),
-                                            title="[bold magenta]✦ Aizen[/bold magenta]",
-                                            border_style="magenta",
-                                            padding=(1, 2),
-                                        )
-                                    )
+                                    display_text = Text.from_markup(f"[bold #ffabf3]AIZEN:[/bold #ffabf3] {full_content}")
+                                    live.update(display_text)
 
                             # ── Tool call tokens ──
                             if delta.tool_calls:
@@ -427,10 +415,9 @@ async def main_loop():
                                 ]
                                 if names and not full_content:
                                     tool_text = Text()
-                                    tool_text.append("  ⚙️  ", style="magenta")
+                                    tool_text.append("AIZEN: ", style="bold #ffabf3")
                                     tool_text.append(
-                                        f"Preparing: {', '.join(names)}",
-                                        style="dim italic",
+                                        f"Invoking [#d3fbff]{', '.join(names)}[/#d3fbff]...",
                                     )
                                     live.update(tool_text)
 
@@ -470,8 +457,15 @@ async def main_loop():
                         "[dim]Hint: Check your internet connection or API base URL.[/dim]"
                     )
                     break
+                except BadRequestError as e:
+                    logger.error("Bad request to API: %s", e)
+                    console.print(f"\n[bold red]Bad Request Error:[/bold red] {e}")
+                    console.print(
+                        "[dim]Hint: This usually means the model ID is invalid or the context length was exceeded.[/dim]"
+                    )
+                    break
                 except Exception as e:
-                    logger.exception("Unexpected API error: %s", e)
+                    logger.error("Unexpected API error: %s", e)
                     console.print(f"\n[bold red]API Error:[/bold red] {e}")
                     error_str = str(e).lower()
                     if "401" in error_str or "unauthorized" in error_str:
