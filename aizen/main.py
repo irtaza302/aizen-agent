@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Aizen AI Agent v2.1 — A professional-grade AI coding assistant for your terminal.
+Aizen AI Agent — A professional-grade AI coding assistant for your terminal.
 """
 
 import os
@@ -10,6 +10,7 @@ import json
 import random
 import argparse
 import asyncio
+from typing import Any
 import subprocess
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
@@ -35,7 +36,7 @@ from .config import (
     check_for_updates,
     get_mcp_servers,
 )
-from .utils import TokenTracker, Struct, fetch_url_content, generate_directory_tree
+from .utils import TokenTracker, Struct, fetch_url_content, generate_directory_tree, truncate_output
 from .session import save_session
 from .tools import tools, backup_manager, execute_tool
 from .commands import handle_slash_command, AizenCompleter
@@ -289,6 +290,40 @@ async def main_loop():
             if warning:
                 console.print(f"[yellow]{warning}[/yellow]\n")
 
+            # ── Auto-compact if context is critically full (>90%) ──
+            if context_manager.needs_auto_compact() and len(messages) > 6:
+                console.print("[dim yellow]⚡ Auto-compacting conversation to stay within context limits...[/dim yellow]")
+                system_msg = messages[0]
+                recent = messages[-4:]
+                middle = messages[1:-4]
+                if middle:
+                    user_topics = [
+                        m["content"][:100]
+                        for m in middle
+                        if m["role"] == "user" and m.get("content")
+                    ]
+                    summary = (
+                        "Previous conversation summary: The user and assistant discussed "
+                        + "; ".join(user_topics[:5])
+                        + ". The assistant helped with these requests using code analysis and editing tools."
+                    )
+                    messages[:] = [
+                        system_msg,
+                        {"role": "user", "content": f"Previous conversation summary:\n{summary}"},
+                        {
+                            "role": "assistant",
+                            "content": "Understood. I have the context from our previous discussion. How can I continue helping?",
+                        },
+                    ] + recent
+                    console.print(
+                        f"[green]✓ Auto-compacted {len(middle)} messages into a summary.[/green]\n"
+                    )
+                    # Recalculate token usage after compaction
+                    estimated_total = context_manager.estimate_messages_tokens(
+                        messages, token_tracker.estimate_tokens
+                    )
+                    context_manager.update(estimated_total)
+
             # ── Agent Loop ──────────────────────────────────────────────────
             while True:
                 full_content = ""
@@ -464,7 +499,6 @@ async def main_loop():
                     token_tracker.add_usage(estimated_input, estimated_output)
 
                 # Build tool calls list
-                from typing import Any
                 tool_calls_list: list[dict[str, Any]] = []
                 for idx in sorted(accumulated_tool_calls.keys()):
                     tc = accumulated_tool_calls[idx]
@@ -480,7 +514,6 @@ async def main_loop():
                     )
 
                 # Add assistant message to history
-                from typing import Any
                 assistant_msg: dict[str, Any] = {
                     "role": "assistant",
                     "content": full_content or "",

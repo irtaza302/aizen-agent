@@ -1,5 +1,7 @@
 # Aizen AI Agent 🚀
 
+[![CI](https://github.com/irtaza302/aizen-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/irtaza302/aizen-agent/actions/workflows/ci.yml)
+
 A professional-grade AI coding assistant that runs directly in your terminal. Aizen reads your code, writes files with surgical precision, runs commands safely, and helps you build faster — all from a beautifully designed CLI.
 
 ## ✨ Features
@@ -42,6 +44,7 @@ Aizen has 9 built-in tools the AI can use:
 | `/restore [name]` | Restore a saved conversation checkpoint |
 | `/usage` | Show token usage, estimated session cost (USD), and statistics |
 | `/commit` | Auto-generate a commit message for staged/unstaged changes and commit them |
+| `/diff` | Show all uncommitted changes (staged, unstaged, untracked) |
 | `/compact` | Summarize older messages using AI (fallback to text-summarization) to save tokens |
 | `/undo` | Undo the last file modification |
 | `/retry` | Retry the last message |

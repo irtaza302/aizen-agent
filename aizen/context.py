@@ -17,32 +17,49 @@ MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     # Anthropic
     "anthropic/claude-sonnet-4": 200_000,
     "anthropic/claude-3.5-sonnet": 200_000,
+    "anthropic/claude-3.7-sonnet": 200_000,
     "anthropic/claude-3-opus": 200_000,
     "anthropic/claude-3-haiku": 200_000,
+    "anthropic/claude-3.5-haiku": 200_000,
+    "anthropic/claude-4-opus": 200_000,
     # OpenAI
     "openai/gpt-4o": 128_000,
     "openai/gpt-4o-mini": 128_000,
     "openai/gpt-4-turbo": 128_000,
     "openai/gpt-4": 8_192,
+    "openai/gpt-4.1": 1_047_576,
+    "openai/gpt-4.1-mini": 1_047_576,
+    "openai/gpt-4.1-nano": 1_047_576,
     "openai/o1": 200_000,
     "openai/o1-mini": 128_000,
+    "openai/o3": 200_000,
+    "openai/o3-mini": 200_000,
+    "openai/o4-mini": 200_000,
     # Google
+    "google/gemini-2.5-pro": 1_048_576,
+    "google/gemini-2.5-flash": 1_048_576,
+    "google/gemini-2.0-flash": 1_048_576,
     "google/gemini-2.0-flash-001": 1_048_576,
     "google/gemini-pro-1.5": 1_048_576,
     # Meta
+    "meta-llama/llama-4-maverick": 1_048_576,
+    "meta-llama/llama-3.3-70b-instruct": 131_072,
     "meta-llama/llama-3.1-405b-instruct": 131_072,
     "meta-llama/llama-3.1-70b-instruct": 131_072,
     "meta-llama/llama-3.1-8b-instruct": 131_072,
     # Nvidia
     "nvidia/nemotron-3-super-120b-a12b:free": 32_768,
     # DeepSeek
+    "deepseek/deepseek-chat-v3": 128_000,
     "deepseek/deepseek-chat": 64_000,
     "deepseek/deepseek-coder": 64_000,
+    "deepseek/deepseek-r1": 128_000,
     # Mistral
     "mistralai/mistral-large": 128_000,
     "mistralai/mixtral-8x7b-instruct": 32_768,
     # Qwen
     "qwen/qwen-2.5-72b-instruct": 131_072,
+    "qwen/qwen3-235b-a22b": 131_072,
 }
 
 # Default context window when model is unknown

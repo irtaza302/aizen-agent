@@ -1,13 +1,43 @@
 """
 Retry logic with exponential backoff + jitter for transient API errors.
+
+Supports both synchronous and asynchronous functions — the decorator
+auto-detects coroutine functions and uses asyncio.sleep accordingly.
 """
 
+import asyncio
+import inspect
 import time
 import random
 import functools
 from rich.text import Text
 
 from .config import console
+
+
+def _compute_delay(backoff_base: float, attempt: int, jitter: bool) -> float:
+    """Calculate retry delay with optional jitter."""
+    delay = backoff_base ** attempt
+    if jitter:
+        delay *= 1.0 + random.uniform(-0.25, 0.25)
+    return delay
+
+
+def _print_retry_message(exception: BaseException, delay: float, attempt: int, max_retries: int) -> None:
+    """Print a formatted retry notice to the console."""
+    retry_msg = Text()
+    retry_msg.append("  ⏳ ", style="yellow")
+    retry_msg.append(f"{type(exception).__name__}. ", style="dim")
+    retry_msg.append(
+        f"Retrying in {delay:.1f}s... ({attempt + 1}/{max_retries})",
+        style="dim italic",
+    )
+    console.print(retry_msg)
+
+
+def _is_retryable_503(e: BaseException) -> bool:
+    """Check if an exception represents a 503 Service Unavailable."""
+    return hasattr(e, "status_code") and e.status_code == 503
 
 
 def retry_with_backoff(
@@ -18,6 +48,9 @@ def retry_with_backoff(
 ):
     """
     Decorator that retries a function on transient failures with exponential backoff.
+
+    Automatically detects async functions and uses ``asyncio.sleep`` instead of
+    ``time.sleep`` so that the event loop is never blocked.
 
     Args:
         max_retries: Maximum number of retry attempts.
@@ -31,7 +64,6 @@ def retry_with_backoff(
             RateLimitError as OpenAIRateLimitError,
             APITimeoutError,
             APIConnectionError as OpenAIConnectionError,
-            APIStatusError,
         )
         retryable_exceptions = (
             OpenAIRateLimitError,
@@ -40,8 +72,36 @@ def retry_with_backoff(
         )
 
     def decorator(func):
+        # ── Async wrapper ──
+        if inspect.iscoroutinefunction(func):
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                last_exception: BaseException = RuntimeError("Retry exhausted")
+                for attempt in range(max_retries + 1):
+                    try:
+                        return await func(*args, **kwargs)
+                    except retryable_exceptions as e:
+                        last_exception = e
+                        if attempt < max_retries:
+                            delay = _compute_delay(backoff_base, attempt, jitter)
+                            _print_retry_message(e, delay, attempt, max_retries)
+                            await asyncio.sleep(delay)
+                    except Exception as e:
+                        if _is_retryable_503(e):
+                            last_exception = e
+                            if attempt < max_retries:
+                                delay = _compute_delay(backoff_base, attempt, jitter)
+                                _print_retry_message(e, delay, attempt, max_retries)
+                                await asyncio.sleep(delay)
+                                continue
+                        raise
+                raise last_exception
+
+            return async_wrapper
+
+        # ── Sync wrapper ──
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def sync_wrapper(*args, **kwargs):
             last_exception: BaseException = RuntimeError("Retry exhausted")
             for attempt in range(max_retries + 1):
                 try:
@@ -49,43 +109,20 @@ def retry_with_backoff(
                 except retryable_exceptions as e:
                     last_exception = e
                     if attempt < max_retries:
-                        delay = backoff_base ** attempt
-                        if jitter:
-                            # Add ±25% jitter to avoid thundering herd
-                            delay *= 1.0 + random.uniform(-0.25, 0.25)
-                        retry_msg = Text()
-                        retry_msg.append("  ⏳ ", style="yellow")
-                        retry_msg.append(
-                            f"{type(e).__name__}. ",
-                            style="dim",
-                        )
-                        retry_msg.append(
-                            f"Retrying in {delay:.1f}s... ({attempt + 1}/{max_retries})",
-                            style="dim italic",
-                        )
-                        console.print(retry_msg)
+                        delay = _compute_delay(backoff_base, attempt, jitter)
+                        _print_retry_message(e, delay, attempt, max_retries)
                         time.sleep(delay)
                 except Exception as e:
-                    # Check for retryable HTTP status codes (503 Service Unavailable)
-                    if hasattr(e, "status_code") and e.status_code == 503:
+                    if _is_retryable_503(e):
                         last_exception = e
                         if attempt < max_retries:
-                            delay = backoff_base ** attempt
-                            if jitter:
-                                delay *= 1.0 + random.uniform(-0.25, 0.25)
-                            retry_msg = Text()
-                            retry_msg.append("  ⏳ ", style="yellow")
-                            retry_msg.append("Service Unavailable (503). ", style="dim")
-                            retry_msg.append(
-                                f"Retrying in {delay:.1f}s... ({attempt + 1}/{max_retries})",
-                                style="dim italic",
-                            )
-                            console.print(retry_msg)
+                            delay = _compute_delay(backoff_base, attempt, jitter)
+                            _print_retry_message(e, delay, attempt, max_retries)
                             time.sleep(delay)
                             continue
-                    raise  # Non-retryable error, propagate immediately
+                    raise
             raise last_exception
 
-        return wrapper
+        return sync_wrapper
 
     return decorator

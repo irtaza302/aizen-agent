@@ -1,25 +1,43 @@
 import os
 import json
 import re
-from datetime import datetime
-
-from .config import SESSIONS_DIR
-from .utils import TokenTracker
-
-import os
-import json
-import re
 import sqlite3
 from datetime import datetime
 
 from .config import SESSIONS_DIR
 from .utils import TokenTracker
+from .logging_config import logger
+
+
+# ─── Singleton DB connection ────────────────────────────────────────────────────
+
+_db_connection: sqlite3.Connection | None = None
+_db_path_cached: str | None = None
+
 
 def _get_db() -> sqlite3.Connection:
+    """Return a singleton SQLite connection, creating the schema if needed.
+    
+    Automatically reconnects if SESSIONS_DIR has changed (e.g. during testing).
+    """
+    global _db_connection, _db_path_cached
+
     os.makedirs(SESSIONS_DIR, exist_ok=True)
     db_path = os.path.join(SESSIONS_DIR, "aizen.db")
-    conn = sqlite3.connect(db_path)
-    conn.execute('''
+
+    # Reconnect if the path changed (supports monkeypatch in tests)
+    if _db_connection is not None and _db_path_cached == db_path:
+        return _db_connection
+
+    if _db_connection is not None:
+        try:
+            _db_connection.close()
+        except Exception:
+            pass
+
+    _db_connection = sqlite3.connect(db_path)
+    _db_path_cached = db_path
+    _db_connection.execute('''
         CREATE TABLE IF NOT EXISTS sessions (
             name TEXT PRIMARY KEY,
             saved_at TEXT,
@@ -29,8 +47,9 @@ def _get_db() -> sqlite3.Connection:
             output_tokens INTEGER
         )
     ''')
-    conn.commit()
-    return conn
+    _db_connection.commit()
+    return _db_connection
+
 
 def _migrate_legacy_sessions():
     """Migrate old .json files into the SQLite DB once."""

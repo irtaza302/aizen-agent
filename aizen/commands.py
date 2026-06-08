@@ -20,6 +20,7 @@ from .config import (
 from .utils import TokenTracker, load_gitignore_patterns, should_ignore
 from .session import save_session, load_session, list_sessions
 from .tools import backup_manager
+from .logging_config import logger
 
 SLASH_COMMANDS = [
     ("/help", "Show all available commands"),
@@ -39,6 +40,7 @@ SLASH_COMMANDS = [
     ("/config", "View current configuration"),
     ("/mcp", "View configured MCP servers and their status"),
     ("/commit", "Auto-generate and commit changes"),
+    ("/diff", "Show all uncommitted changes"),
 ]
 
 # In-memory checkpoint storage for conversation branching
@@ -207,6 +209,8 @@ async def handle_slash_command(
         help_table.add_row("/restore [name]", "Restore a saved checkpoint")
         help_table.add_row("/config", "View current configuration")
         help_table.add_row("/mcp", "View configured MCP servers and their status")
+        help_table.add_row("/commit", "Auto-generate and commit changes")
+        help_table.add_row("/diff", "Show all uncommitted changes")
         help_table.add_row("", "")
         help_table.add_row("@filename / @url", "Attach file context or web URL")
         help_table.add_row("exit / quit", "Exit Aizen")
@@ -545,7 +549,7 @@ async def handle_slash_command(
             ]
             
             response = await client.chat.completions.create(
-                model=MODEL,
+                model=get_active_model(),
                 messages=commit_messages,
                 max_tokens=200,
             )
@@ -574,6 +578,63 @@ async def handle_slash_command(
             console.print("[red]Error: Not a git repository or git command failed.[/red]\n")
         except Exception as e:
             console.print(f"[red]Error during auto-commit: {e}[/red]\n")
+
+    elif cmd == "/diff":
+        try:
+            # Show staged + unstaged changes
+            result_staged = subprocess.run(
+                ["git", "diff", "--cached", "--stat"],
+                capture_output=True, text=True, check=True
+            )
+            result_unstaged = subprocess.run(
+                ["git", "diff", "--stat"],
+                capture_output=True, text=True, check=True
+            )
+            result_untracked = subprocess.run(
+                ["git", "ls-files", "--others", "--exclude-standard"],
+                capture_output=True, text=True, check=True
+            )
+
+            has_output = False
+
+            if result_staged.stdout.strip():
+                console.print("[bold green]Staged changes:[/bold green]")
+                console.print(f"[dim]{result_staged.stdout.strip()}[/dim]")
+                has_output = True
+
+            if result_unstaged.stdout.strip():
+                console.print("[bold yellow]Unstaged changes:[/bold yellow]")
+                console.print(f"[dim]{result_unstaged.stdout.strip()}[/dim]")
+                has_output = True
+
+            if result_untracked.stdout.strip():
+                untracked = result_untracked.stdout.strip().split("\n")
+                console.print(f"[bold cyan]Untracked files ({len(untracked)}):[/bold cyan]")
+                for f in untracked[:20]:
+                    console.print(f"  [dim]+ {f}[/dim]")
+                if len(untracked) > 20:
+                    console.print(f"  [dim]... and {len(untracked) - 20} more[/dim]")
+                has_output = True
+
+            if not has_output:
+                console.print("[green]✓ Working tree is clean.[/green]")
+
+            # Show full diff if requested
+            if arg == "--full" or arg == "-f":
+                result_full = subprocess.run(
+                    ["git", "diff"],
+                    capture_output=True, text=True, check=True
+                )
+                if result_full.stdout.strip():
+                    from rich.syntax import Syntax
+                    syntax = Syntax(result_full.stdout, "diff", theme="monokai")
+                    console.print(syntax)
+
+            console.print()
+        except subprocess.CalledProcessError:
+            console.print("[red]Error: Not a git repository or git command failed.[/red]\n")
+        except Exception as e:
+            console.print(f"[red]Error showing diff: {e}[/red]\n")
 
     else:
         console.print(

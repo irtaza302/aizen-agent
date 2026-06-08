@@ -52,6 +52,17 @@ DANGEROUS_PATTERNS = [
     r"\brm\s", r"\bsudo\b", r"\bchmod\b", r"\bchown\b", r"\bmkfs\b",
     r"\bdd\b", r":\(\)\{", r"\bkill\b", r"\bpkill\b", r"\bshutdown\b",
     r"\breboot\b", r">\s*/dev/", r"\bcurl\b.*\|\s*(ba)?sh",
+    # Shell injection patterns
+    r"`[^`]+`",           # Backtick command substitution
+    r"\$\([^)]+\)",       # $() command substitution
+    r"\beval\b",          # eval execution
+    r"\bexec\b",          # exec execution
+    r"\bsource\b",        # source execution
+    r"\|\s*(ba)?sh\b",    # Pipe to shell
+    r"\|\s*zsh\b",        # Pipe to zsh
+    r"\|\s*python",       # Pipe to python
+    r"\bwget\b.*\|\s*",   # wget piped to anything
+    r"\bnohup\b",         # Background with nohup
 ]
 
 SYSTEM_PROMPT = """\

@@ -9,10 +9,19 @@ fi
 echo "🚀 Starting the Aizen release process..."
 
 echo "----------------------------------------"
+echo "🔍 0. Pre-flight Checks"
+echo "----------------------------------------"
+echo "Running tests..."
+python3 -m pytest tests/ -v --tb=short || { echo "❌ Tests failed. Aborting release."; exit 1; }
+echo "Running lint..."
+python3 -m ruff check aizen/ || echo "⚠️ Lint warnings found (non-blocking)"
+echo ""
+
+echo "----------------------------------------"
 echo "📦 1. Building and Publishing to PyPI"
 echo "----------------------------------------"
 rm -rf dist/ build/ *.egg-info
-python3 setup.py sdist bdist_wheel
+python3 -m build
 if command -v twine &> /dev/null; then
     echo "Uploading to PyPI..."
     twine upload dist/* || echo "⚠️ Twine upload failed or skipped. (Did you log in?)"

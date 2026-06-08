@@ -8,6 +8,7 @@ from datetime import datetime
 from rich.table import Table
 
 from .config import BACKUPS_DIR
+from .logging_config import logger
 
 # ─── Optional tiktoken for accurate token counting ─────────────────────────────
 
@@ -137,15 +138,34 @@ class TokenTracker:
 
 # Pricing per 1,000,000 tokens (input, output) in USD
 MODEL_PRICING = {
+    # Anthropic
+    "anthropic/claude-sonnet-4": (3.00, 15.00),
     "anthropic/claude-3.5-sonnet": (3.00, 15.00),
     "anthropic/claude-3.7-sonnet": (3.00, 15.00),
     "anthropic/claude-3-opus": (15.00, 75.00),
-    "anthropic/claude-3.5-haiku": (0.25, 1.25),
-    "google/gemini-2.5-pro": (1.25, 5.00),
-    "google/gemini-2.5-flash": (0.075, 0.30),
+    "anthropic/claude-3.5-haiku": (0.80, 4.00),
+    "anthropic/claude-4-opus": (15.00, 75.00),
+    # Google
+    "google/gemini-2.5-pro": (1.25, 10.00),
+    "google/gemini-2.5-flash": (0.15, 0.60),
+    "google/gemini-2.0-flash": (0.10, 0.40),
+    # OpenAI
     "openai/gpt-4o": (2.50, 10.00),
+    "openai/gpt-4o-mini": (0.15, 0.60),
+    "openai/gpt-4.1": (2.00, 8.00),
+    "openai/gpt-4.1-mini": (0.40, 1.60),
+    "openai/gpt-4.1-nano": (0.10, 0.40),
     "openai/o1": (15.00, 60.00),
+    "openai/o3": (10.00, 40.00),
     "openai/o3-mini": (1.10, 4.40),
+    "openai/o4-mini": (1.10, 4.40),
+    # DeepSeek
+    "deepseek/deepseek-chat-v3": (0.27, 1.10),
+    "deepseek/deepseek-chat": (0.14, 0.28),
+    "deepseek/deepseek-r1": (0.55, 2.19),
+    # Meta
+    "meta-llama/llama-4-maverick": (0.20, 0.60),
+    "meta-llama/llama-3.3-70b-instruct": (0.10, 0.25),
 }
 
 def get_model_cost(model_name: str, input_tokens: int, output_tokens: int) -> float:

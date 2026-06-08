@@ -23,6 +23,7 @@ from typing import Any
 # Global dictionary for tracking background tasks
 # task_id -> {"process": Popen, "stdout": list, "stderr": list, "command": str}
 background_tasks: dict[str, dict[str, Any]] = {}
+background_tasks_lock = threading.Lock()  # Protects background_tasks dict
 
 terminal_lock = threading.Lock()
 
@@ -667,7 +668,8 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
                 "command": command,
                 "start_time": time.time()
             }
-            background_tasks[task_id] = task_info
+            with background_tasks_lock:
+                background_tasks[task_id] = task_info
             
             def stream_reader(pipe, dest_list):
                 for line in iter(pipe.readline, ''):
@@ -741,10 +743,11 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
 
 def check_background_task_impl(task_id: str) -> str:
     """Checks the status of a background task and returns its recent output."""
-    if task_id not in background_tasks:
-        return f"Error: No such background task '{task_id}'."
+    with background_tasks_lock:
+        if task_id not in background_tasks:
+            return f"Error: No such background task '{task_id}'."
+        task = background_tasks[task_id]
 
-    task = background_tasks[task_id]
     proc = task["process"]
     
     out_lines = list(task["stdout"])
@@ -761,27 +764,27 @@ def check_background_task_impl(task_id: str) -> str:
     if stderr_str:
         result += f"--- STDERR (last 100 lines) ---\n{stderr_str}\n"
     
-    # Optional cleanup if done
+    # Cleanup if done
     if proc.poll() is not None:
-        del background_tasks[task_id]
+        with background_tasks_lock:
+            background_tasks.pop(task_id, None)
         
     return result.strip()
 
 
 def kill_background_task_impl(task_id: str) -> str:
     """Kills a running background task."""
-    if task_id not in background_tasks:
-        return f"Error: No such background task '{task_id}'."
+    with background_tasks_lock:
+        if task_id not in background_tasks:
+            return f"Error: No such background task '{task_id}'."
+        task = background_tasks.pop(task_id)
 
-    task = background_tasks[task_id]
     proc = task["process"]
     
     if proc.poll() is None:
         proc.kill()
-        del background_tasks[task_id]
         return f"Task {task_id} killed."
     else:
-        del background_tasks[task_id]
         return f"Task {task_id} was already finished."
 
 
