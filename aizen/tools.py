@@ -697,19 +697,28 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
                     logger.warning("Command timed out after %ds: %s", timeout, command)
                     return f"Error: Command timed out after {timeout} seconds."
 
-                # Read available stdout non-blockingly
-                if proc.stdout:
-                    rlist, _, _ = select.select([proc.stdout], [], [], 0.1)
-                    if rlist:
-                        line = proc.stdout.readline()
-                        if line:
-                            stdout_lines.append(line)
-                            # Show live output tail (last 15 lines)
-                            tail = "".join(stdout_lines[-15:])
-                            display = Text()
-                            display.append(f"  ▶ Running ({elapsed:.0f}s)\n", style="dim italic")
-                            display.append(tail.rstrip(), style="dim")
-                            live.update(display)
+                # Read available stdout and stderr non-blockingly
+                reads = []
+                if proc.stdout: reads.append(proc.stdout)
+                if proc.stderr: reads.append(proc.stderr)
+                
+                if reads:
+                    rlist, _, _ = select.select(reads, [], [], 0.1)
+                    for fd in rlist:
+                        if fd == proc.stdout:
+                            line = proc.stdout.readline()
+                            if line:
+                                stdout_lines.append(line)
+                                # Show live output tail (last 15 lines)
+                                tail = "".join(stdout_lines[-15:])
+                                display = Text()
+                                display.append(f"  ▶ Running ({elapsed:.0f}s)\n", style="dim italic")
+                                display.append(tail.rstrip(), style="dim")
+                                live.update(display)
+                        elif fd == proc.stderr:
+                            line = proc.stderr.readline()
+                            if line:
+                                stderr_lines.append(line)
 
             # Read remaining output after process exits
             if proc.stdout:

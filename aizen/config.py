@@ -273,12 +273,20 @@ def _do_update_check(config: dict):
             except Exception as e:
                 logger.debug("Failed to save config after update check: %s", e)
 
-            if latest != VERSION:
+            try:
+                latest_parts = tuple(map(int, latest.split('.')))
+                current_parts = tuple(map(int, VERSION.split('.')))
+                is_newer = latest_parts > current_parts
+            except Exception:
+                is_newer = latest != VERSION
+                
+            if is_newer:
                 console.print(
                     f"\n[bold magenta]🔔 Update available:[/bold magenta] v{VERSION} → v{latest}"
                 )
                 console.print("[dim]Run: pip install -U aizen-ai-cli (or brew upgrade aizen)[/dim]")
-                console.print("[dim]Then restart Aizen to use the new version![/dim]\n")
+                console.print("[dim]Then restart Aizen to use the new version![/dim]\n"
+                )
     except Exception as e:
         logger.debug("Update check failed (network/parsing): %s", e)
 
@@ -295,11 +303,20 @@ def check_for_updates(config: dict | None = None):
         # Check if we have a cached latest version that's newer
         cached = config.get("_latest_version")
         if cached and cached != VERSION:
-            console.print(
-                f"\n[bold magenta]🔔 Update available:[/bold magenta] v{VERSION} → v{cached}"
-            )
-            console.print("[dim]Run: pip install -U aizen-ai-cli (or brew upgrade aizen)[/dim]")
-            console.print("[dim]Then restart Aizen to use the new version![/dim]\n")
+            try:
+                cached_parts = tuple(map(int, cached.split('.')))
+                current_parts = tuple(map(int, VERSION.split('.')))
+                is_newer = cached_parts > current_parts
+            except Exception:
+                is_newer = cached != VERSION
+                
+            if is_newer:
+                console.print(
+                    f"\n[bold magenta]🔔 Update available:[/bold magenta] v{VERSION} → v{cached}"
+                )
+                console.print("[dim]Run: pip install -U aizen-ai-cli (or brew upgrade aizen)[/dim]")
+                console.print("[dim]Then restart Aizen to use the new version![/dim]\n"
+                )
         return
 
     thread = threading.Thread(target=_do_update_check, args=(config,), daemon=True)
