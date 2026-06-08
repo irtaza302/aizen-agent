@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aizen-ai-cli"
-version = "2.2.3"
+version = "2.2.4"
 description = "Aizen AI Agent — A professional-grade AI coding assistant for your terminal."
 readme = "README.md"
 license = {text = "MIT"}
