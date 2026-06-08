@@ -183,13 +183,24 @@ class TestAizenCompleter:
         assert "/help" in texts
 
     def test_slash_command_no_args_completion(self):
-        """Should not complete after space (user is typing args)."""
+        """Should not complete after space for commands that don't take args."""
+        completer = AizenCompleter()
+        doc = MagicMock()
+        doc.text_before_cursor = "/help "
+
+        completions = list(completer.get_completions(doc, None))
+        assert len(completions) == 0
+
+    @patch("aizen.commands.get_cached_models")
+    def test_slash_command_model_completion(self, mock_get_models):
+        """Should complete models after /model """
+        mock_get_models.return_value = [{"id": "test/model", "name": "Test Model", "context_length": 8000}]
         completer = AizenCompleter()
         doc = MagicMock()
         doc.text_before_cursor = "/model "
 
         completions = list(completer.get_completions(doc, None))
-        assert len(completions) == 0
+        assert len(completions) > 0
 
     def test_no_completion_for_regular_text(self):
         completer = AizenCompleter()
