@@ -209,13 +209,30 @@ def migrate_legacy_data():
 
 def load_config() -> dict:
     migrate_legacy_data()
+    
+    config = {}
+    # Load global config
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH) as f:
-                return json.load(f)
+                config = json.load(f)
         except Exception as e:
-            logger.debug("Failed to load config file: %s", e)
-    return {}
+            logger.debug("Failed to load global config file: %s", e)
+
+    # Merge local config if present
+    local_config_path = os.path.join(os.getcwd(), ".aizen_config.json")
+    if os.path.exists(local_config_path):
+        try:
+            with open(local_config_path) as f:
+                local_config = json.load(f)
+                # Merge local config keys (overriding global ones)
+                if isinstance(local_config, dict):
+                    config.update(local_config)
+                    console.print(f"{Theme.SYS} Local config loaded from [#d3fbff]{local_config_path}[/#d3fbff]")
+        except Exception as e:
+            logger.debug("Failed to load local config file: %s", e)
+            
+    return config
 
 
 def get_mcp_servers(config: dict) -> dict:

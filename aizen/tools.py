@@ -5,6 +5,8 @@ import json
 import os
 import re
 import subprocess
+import shutil
+import tempfile
 import threading
 import time
 import uuid
@@ -366,6 +368,23 @@ tools = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_file_outline",
+            "description": "Extracts the abstract syntax tree (AST) outline of a Python file, showing classes, methods, and docstrings without the full implementation details. Useful for exploring large codebases.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filepath": {
+                        "type": "string",
+                        "description": "Path to the Python file.",
+                    }
+                },
+                "required": ["filepath"],
+            },
+        },
+    },
 ]
 
 
@@ -507,6 +526,44 @@ def _check_git_dirty(filepath: str) -> None:
     except Exception:
         pass  # Not a git repo or git not installed
 
+def get_file_outline(filepath: str) -> str:
+    """Extract AST outline of a Python file."""
+    try:
+        if not filepath.endswith('.py'):
+            return f"Error: '{filepath}' is not a Python file."
+        if not os.path.exists(filepath):
+            match = fuzzy_match_file(filepath)
+            if match:
+                filepath = match
+            else:
+                return f"Error: File '{filepath}' does not exist."
+        
+        with open(filepath, encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+            
+        tree = ast.parse(content)
+        outline = [f"File: {filepath}\n"]
+        
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                doc = ast.get_docstring(node)
+                doc_str = f'    """{doc}"""\n' if doc else ''
+                outline.append(f"class {node.name}:\n{doc_str}")
+                for child in node.body:
+                    if isinstance(child, ast.FunctionDef):
+                        cdoc = ast.get_docstring(child)
+                        cdoc_str = f'        """{cdoc}"""\n' if cdoc else ''
+                        outline.append(f"    def {child.name}(...):\n{cdoc_str}")
+            elif isinstance(node, ast.FunctionDef):
+                doc = ast.get_docstring(node)
+                doc_str = f'    """{doc}"""\n' if doc else ''
+                outline.append(f"def {node.name}(...):\n{doc_str}")
+                
+        if len(outline) == 1:
+            return outline[0] + "\nNo classes or functions found."
+        return "\n".join(outline)
+    except Exception as e:
+        return f"Error getting file outline: {e}"
 
 def read_file(filepath: str) -> str:
     """Read file contents with safety checks for size and binary detection."""
@@ -627,6 +684,10 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
             syntax = Syntax(preview, lang, theme="monokai", line_numbers=True)
             console.print(syntax)
 
+        syntax_err = _validate_syntax(filepath, content)
+        if syntax_err:
+            return f"Error: The edit introduces a syntax or linting error and was aborted.\n{syntax_err}"
+
         # YOLO mode: skip confirmation
         with terminal_lock:
             if not _ask_permission("  ▸ Allow?", auto_approve):
@@ -651,6 +712,33 @@ def _validate_syntax(filepath: str, file_content: str) -> str | None:
             ast.parse(file_content)
         except SyntaxError as e:
             return f"SyntaxError in Python code: {e.msg} at line {e.lineno}, col {e.offset}"
+            
+        # Additional Linting
+        if shutil.which("ruff"):
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp:
+                tmp.write(file_content)
+                tmp_path = tmp.name
+            try:
+                result = subprocess.run(["ruff", "check", tmp_path], capture_output=True, text=True)
+                if result.returncode != 0:
+                    output = result.stdout.replace(tmp_path, os.path.basename(filepath))
+                    return f"Ruff Linting Error:\n{output}"
+            finally:
+                os.unlink(tmp_path)
+                
+    elif filepath.endswith((".js", ".jsx", ".ts", ".tsx")):
+        if shutil.which("eslint"):
+            ext = os.path.splitext(filepath)[1]
+            with tempfile.NamedTemporaryFile(mode="w", suffix=ext, delete=False) as tmp:
+                tmp.write(file_content)
+                tmp_path = tmp.name
+            try:
+                result = subprocess.run(["eslint", "--no-warn-ignored", tmp_path], capture_output=True, text=True)
+                if result.returncode != 0:
+                    output = result.stdout.replace(tmp_path, os.path.basename(filepath))
+                    return f"ESLint Error:\n{output}"
+            finally:
+                os.unlink(tmp_path)
     return None
 
 def _fuzzy_find_block(file_lines: list[str], target_content: str, start_line: int, end_line: int) -> str | None:
@@ -1232,6 +1320,12 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
         tool_label.append(f" → {pattern or '?'}", style="dim")
         console.print(tool_label)
         return truncate_output(find_files(pattern, path))
+
+    elif func_name == "get_file_outline":
+        filepath = str(args.get("filepath", ""))
+        tool_label.append(f" → {filepath or '?'}", style="dim")
+        console.print(tool_label)
+        return truncate_output(get_file_outline(filepath))
 
     else:
         # Check if a plugin handles this tool

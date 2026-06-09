@@ -44,6 +44,7 @@ SLASH_COMMANDS = [
     ("/mcp", "View configured MCP servers and their status"),
     ("/commit", "Auto-generate and commit changes"),
     ("/diff", "Show all uncommitted changes"),
+    ("/auto", "Enter autonomous agentic mode for a complex task"),
 ]
 
 # In-memory checkpoint storage for conversation branching
@@ -283,6 +284,10 @@ async def handle_slash_command(
         help_table.add_row(f"[bold {Theme.MUTED}]── Git ──[/bold {Theme.MUTED}]", "")
         help_table.add_row("  🔀 /commit", "Auto-generate and commit changes")
         help_table.add_row("  📊 /diff", "Show all uncommitted changes")
+
+        # ── Agent ──
+        help_table.add_row(f"[bold {Theme.MUTED}]── Agent ──[/bold {Theme.MUTED}]", "")
+        help_table.add_row("  🤖 /auto [task]", "Enter autonomous mode for a complex task")
 
         # ── Shortcuts ──
         help_table.add_row(f"[bold {Theme.MUTED}]── Shortcuts ──[/bold {Theme.MUTED}]", "")

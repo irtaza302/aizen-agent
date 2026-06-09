@@ -5,7 +5,9 @@ Aizen AI Agent — A professional-grade AI coding assistant for your terminal.
 
 import argparse
 import asyncio
+import base64
 import json
+import mimetypes
 import os
 import random
 import re
@@ -81,6 +83,8 @@ def inject_file_context(user_input: str) -> str:
     if not matches and not context_blocks:
         return user_input
 
+    images = []
+
     for item in set(matches):
         if item.startswith("http://") or item.startswith("https://"):
             console.print(f"  [dim]🌐 Fetching: {item}[/dim]")
@@ -92,17 +96,28 @@ def inject_file_context(user_input: str) -> str:
                     f'<url_context url="{item}">\n{content}\n</url_context>'
                 )
         elif os.path.isfile(item):
-            try:
-                with open(item, encoding="utf-8", errors="ignore") as f:
-                    content = f.read()
-                context_blocks.append(
-                    f'<file_context path="{item}">\n{content}\n</file_context>'
-                )
-                console.print(f"  [dim]📎 Attached: {item}[/dim]")
-            except Exception as e:
-                console.print(
-                    f"  [dim yellow]⚠️  Failed to read {item}: {e}[/dim yellow]"
-                )
+            ext = os.path.splitext(item)[1].lower()
+            if ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"]:
+                try:
+                    with open(item, "rb") as f:
+                        b64_img = base64.b64encode(f.read()).decode("utf-8")
+                    mime_type = mimetypes.guess_type(item)[0] or "image/png"
+                    images.append(f"data:{mime_type};base64,{b64_img}")
+                    console.print(f"  [dim]🖼️  Attached image: {item}[/dim]")
+                except Exception as e:
+                    console.print(f"  [dim yellow]⚠️  Failed to read image {item}: {e}[/dim yellow]")
+            else:
+                try:
+                    with open(item, encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                    context_blocks.append(
+                        f'<file_context path="{item}">\n{content}\n</file_context>'
+                    )
+                    console.print(f"  [dim]📎 Attached: {item}[/dim]")
+                except Exception as e:
+                    console.print(
+                        f"  [dim yellow]⚠️  Failed to read {item}: {e}[/dim yellow]"
+                    )
         elif os.path.isdir(item):
             try:
                 tree_output = generate_directory_tree(item)
@@ -119,6 +134,13 @@ def inject_file_context(user_input: str) -> str:
 
     if context_blocks:
         user_input += "\n\n" + "\n".join(context_blocks)
+
+    if images:
+        content_list = [{"type": "text", "text": user_input}]
+        for img_url in images:
+            content_list.append({"type": "image_url", "image_url": {"url": img_url}})
+        return content_list
+
     return user_input
 
 
@@ -242,10 +264,43 @@ async def main_loop():
         "scrollbar.button": f"bg:{Theme.ACCENT}",
     })
 
+    def get_bottom_toolbar():
+        # Get dynamic stats
+        cost = token_tracker.get_estimated_cost(get_active_model())
+        cost_str = f" (${cost:.3f})" if cost > 0 else ""
+        msgs = token_tracker.message_count
+        tokens = token_tracker.total_tokens
+        model = get_active_model()
+        ctx_pct = context_manager.usage_percent
+        
+        # Color coding for context usage
+        if ctx_pct >= 85:
+            ctx_color = "fg:#f87171" # ERROR
+        elif ctx_pct >= 75:
+            ctx_color = "fg:#fbbf24" # WARNING
+        else:
+            ctx_color = "fg:#4ade80" # SUCCESS
+            
+        return FormattedText([
+            ("bg:#1e1b2e fg:#6b7280", " ◈ "),
+            ("bg:#1e1b2e fg:#e2e8f0", f"{tokens:,} tokens"),
+            ("bg:#1e1b2e fg:#4ade80 bold", f"{cost_str}"),
+            ("bg:#1e1b2e fg:#4b5563", " │ "),
+            ("bg:#1e1b2e fg:#e2e8f0", f"{msgs}"),
+            ("bg:#1e1b2e fg:#6b7280", " msgs"),
+            ("bg:#1e1b2e fg:#4b5563", " │ "),
+            ("bg:#1e1b2e fg:#22d3ee", f"{model}"),
+            ("bg:#1e1b2e fg:#4b5563", " │ "),
+            ("bg:#1e1b2e fg:#6b7280", "ctx: "),
+            (f"bg:#1e1b2e {ctx_color} bold", f"{ctx_pct}%"),
+            ("bg:#1e1b2e", " "),
+        ])
+
     session: PromptSession = PromptSession(
         completer=AizenCompleter(),
         key_bindings=kb,
-        style=cyberpunk_style
+        style=cyberpunk_style,
+        bottom_toolbar=get_bottom_toolbar
     )
 
     messages = [{"role": "system", "content": build_system_prompt(config)}]
@@ -298,13 +353,30 @@ async def main_loop():
 
             # ── Slash Commands ──
             if user_input.strip().startswith("/"):
-                should_retry = await handle_slash_command(
-                    user_input.strip(), messages, token_tracker, mcp_manager, client
-                )
-                if should_retry and messages and messages[-1]["role"] == "user":
+                if user_input.strip().startswith("/auto"):
+                    task_desc = user_input.strip()[5:].strip()
+                    if not task_desc:
+                        console.print(f"  [{Theme.WARNING}]Please provide a task. Usage: /auto <task>[/{Theme.WARNING}]")
+                        continue
+                    auto_approve = True
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"AUTONOMOUS MODE INITIATED.\nTask: {task_desc}\n\n"
+                            "You are now in fully autonomous mode. Break the task into steps, execute them using your tools, "
+                            "verify the results, and do NOT stop to ask for permission. Keep running tools until the task is completely finished."
+                        )
+                    })
+                    console.print(f"  [{Theme.PRIMARY}]🤖 Autonomous mode engaged! YOLO is active.[/{Theme.PRIMARY}]\n")
                     pass  # Fall through to the agent loop
                 else:
-                    continue
+                    should_retry = await handle_slash_command(
+                        user_input.strip(), messages, token_tracker, mcp_manager, client
+                    )
+                    if should_retry and messages and messages[-1]["role"] == "user":
+                        pass  # Fall through to the agent loop
+                    else:
+                        continue
             else:
                 user_input = inject_file_context(user_input)
                 messages.append({"role": "user", "content": user_input})
@@ -318,39 +390,47 @@ async def main_loop():
             if warning:
                 console.print(f"[yellow]{warning}[/yellow]\n")
 
-            # ── Auto-compact if context is critically full (>90%) ──
-            if context_manager.needs_auto_compact() and len(messages) > 6:
-                console.print("[dim yellow]⚡ Auto-compacting conversation to stay within context limits...[/dim yellow]")
-                system_msg = messages[0]
-                recent = messages[-4:]
-                middle = messages[1:-4]
-                if middle:
-                    user_topics = [
-                        m["content"][:100]
-                        for m in middle
-                        if m["role"] == "user" and m.get("content")
-                    ]
-                    summary = (
-                        "Previous conversation summary: The user and assistant discussed "
-                        + "; ".join(user_topics[:5])
-                        + ". The assistant helped with these requests using code analysis and editing tools."
-                    )
-                    messages[:] = [
-                        system_msg,
-                        {"role": "user", "content": f"Previous conversation summary:\n{summary}"},
-                        {
-                            "role": "assistant",
-                            "content": "Understood. I have the context from our previous discussion. How can I continue helping?",
-                        },
-                    ] + recent
-                    console.print(
-                        f"[green]✓ Auto-compacted {len(middle)} messages into a summary.[/green]\n"
-                    )
-                    # Recalculate token usage after compaction
-                    estimated_total = context_manager.estimate_messages_tokens(
-                        messages, token_tracker.estimate_tokens
-                    )
-                    context_manager.update(estimated_total)
+            # ── Auto-compact if context is critically full ──
+            if context_manager.needs_auto_compact() and len(messages) > 4:
+                console.print("[dim yellow]⚡ Context limit reached. Attempting smart pruning...[/dim yellow]")
+                dropped_count = 0
+                
+                # First pass: try semantic truncation (dropping file/url/dir context blocks)
+                for msg in messages[1:-2]:
+                    if msg["role"] == "user" and msg.get("content"):
+                        old_content = msg["content"]
+                        new_content = re.sub(r'<file_context path="[^"]+">.*?</file_context>', '[File context dropped]', old_content, flags=re.DOTALL)
+                        new_content = re.sub(r'<url_context url="[^"]+">.*?</url_context>', '[URL context dropped]', new_content, flags=re.DOTALL)
+                        new_content = re.sub(r'<directory_context path="[^"]+">.*?</directory_context>', '[Directory context dropped]', new_content, flags=re.DOTALL)
+                        new_content = re.sub(r'<command_context cmd="[^"]+">.*?</command_context>', '[Command context dropped]', new_content, flags=re.DOTALL)
+                        
+                        if old_content != new_content:
+                            msg["content"] = new_content
+                            dropped_count += 1
+                
+                estimated_total = context_manager.estimate_messages_tokens(messages, token_tracker.estimate_tokens)
+                context_manager.update(estimated_total)
+                
+                # Second pass: if still over threshold, do naive summarization
+                if context_manager.needs_auto_compact() and len(messages) > 6:
+                    console.print("[dim yellow]⚡ Context still full. Compacting older messages...[/dim yellow]")
+                    system_msg = messages[0]
+                    recent = messages[-4:]
+                    middle = messages[1:-4]
+                    if middle:
+                        user_topics = [m["content"][:100] for m in middle if m["role"] == "user" and m.get("content")]
+                        summary = "Previous conversation summary: The user and assistant discussed " + "; ".join(user_topics[:5]) + ". The assistant helped with these requests."
+                        messages[:] = [
+                            system_msg,
+                            {"role": "user", "content": f"Previous conversation summary:\n{summary}"},
+                            {"role": "assistant", "content": "Understood. I have the context. How can I continue helping?"},
+                        ] + recent
+                        console.print(f"[green]✓ Auto-compacted {len(middle)} messages into a summary.[/green]\n")
+                elif dropped_count > 0:
+                    console.print(f"[green]✓ Pruned attached contexts from {dropped_count} past messages to save space.[/green]\n")
+                
+                estimated_total = context_manager.estimate_messages_tokens(messages, token_tracker.estimate_tokens)
+                context_manager.update(estimated_total)
 
             # ── Agent Loop ──────────────────────────────────────────────────
             while True:
@@ -588,20 +668,7 @@ async def main_loop():
 
                 # Continue the loop — model processes tool results
 
-            # ── Footer ──
-            cost = token_tracker.get_estimated_cost(get_active_model())
-            cost_display = f" [bold {Theme.SUCCESS}](${cost:.3f})[/bold {Theme.SUCCESS}]" if cost > 0 else ""
-
-            console.print(
-                f"\n  [{Theme.DIM_BORDER}]╰─[/{Theme.DIM_BORDER}] "
-                f"[{Theme.MUTED}]◈[/{Theme.MUTED}] [{Theme.TEXT}]{token_tracker.total_tokens:,}[/{Theme.TEXT}][{Theme.MUTED}] tokens{cost_display}[/{Theme.MUTED}]"
-                f" [{Theme.DIM_BORDER}]│[/{Theme.DIM_BORDER}] "
-                f"[{Theme.TEXT}]{token_tracker.message_count}[/{Theme.TEXT}][{Theme.MUTED}] msgs[/{Theme.MUTED}]"
-                f" [{Theme.DIM_BORDER}]│[/{Theme.DIM_BORDER}] "
-                f"[{Theme.ACCENT}]{get_active_model()}[/{Theme.ACCENT}]"
-                f" [{Theme.DIM_BORDER}]│[/{Theme.DIM_BORDER}] "
-                f"{context_manager.get_footer_text()}\n"
-            )
+            # Footer is now handled by the persistent bottom_toolbar
 
         except (KeyboardInterrupt, EOFError):
             # Auto-save on interrupt
