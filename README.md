@@ -14,6 +14,9 @@ A helpful AI coding assistant you can use right in your terminal. Aizen reads yo
 - **SQLite Session Persistence** — Session storage is powered by a SQLite database (`~/.aizen_sessions/aizen.db`), auto-migrating older JSON sessions.
 - **Project-Specific Rules** — Customizes agent behavior per repository by auto-loading `.aizen_rules` or `.cursorrules` from the current working directory.
 - **Smart Autocomplete** — `@`-mention files with Tab completion that respects `.gitignore` and supports directory traversal.
+- **Vision Support** — Attach images natively (e.g., `@mockup.png`) and Aizen will automatically encode them for Vision APIs (GPT-4o, Claude 3.5 Sonnet).
+- **Real-time Command Streaming** — Long-running shell commands stream their output live to the terminal instead of freezing with a spinner.
+- **Smart Context Pruning** — Automatically drops old, large file attachments first when hitting the context limit before resorting to LLM summarization.
 
 ### Tools
 Aizen has 9 built-in tools the AI can use:
@@ -30,6 +33,7 @@ Aizen has 9 built-in tools the AI can use:
 | `list_directory` | List files/folders with sizes, respecting `.gitignore` |
 | `grep_search` | Search for text or regex patterns across the codebase |
 | `find_files` | Find files by glob pattern (e.g., `*.py`, `Dockerfile`) |
+| `get_file_outline` | Extract AST outline of a Python file (classes, methods, docstrings) without blowing up the context window |
 
 ### Commands
 
@@ -53,6 +57,7 @@ Aizen has 9 built-in tools the AI can use:
 | `/export [file]` | Export conversation to a Markdown file |
 | `/config` | View current configuration |
 | `/mcp` | View configured MCP servers and their connection status |
+| `/auto [task]` | Enter a fully autonomous agentic loop to execute a complex task step-by-step |
 
 ### Safety & UX
 - **Command Safety** — Read-only commands (`ls`, `cat`, `git status`, etc.) auto-execute. Destructive commands (`rm`, `sudo`, etc.) always require confirmation.
