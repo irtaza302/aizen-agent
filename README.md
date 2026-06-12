@@ -8,6 +8,8 @@ A helpful AI coding assistant you can use right in your terminal. Aizen reads yo
 
 ### Core
 - **Asynchronous Architecture** — Fully asynchronous operations leveraging `asyncio` and `AsyncOpenAI` for concurrent processing, parallel tool runs, and streaming.
+- **Stateful Terminal Session** — Commands execute in a persistent Bash shell, meaning environment variables (`export`) and directory changes (`cd`) persist naturally across tool calls.
+- **Custom Plugin System** — Easily extend Aizen by dropping Python scripts into `~/.aizen/plugins/` to register custom AI tools.
 - **Rich Markdown Rendering** — AI responses are rendered with full Markdown formatting (headers, code blocks, lists, bold/italic) via Rich's live display.
 - **Streaming with Live Preview** — Watch responses render in real-time inside a styled panel with an animated thinking spinner.
 - **Surgical File Editing** — The `edit_file` tool makes precise search-and-replace edits with color-coded diff previews, instead of rewriting entire files.
@@ -27,7 +29,7 @@ Aizen has 10 built-in tools the AI can use:
 | `write_file` | Create new files or overwrite entirely (with preview) |
 | `replace_file_content` | Surgical search-and-replace on existing files (with line-bounds and diff preview) |
 | `multi_replace_file_content` | Perform multiple, non-adjacent surgical edits sequentially in a single pass |
-| `run_command` | Execute shell commands (supports background execution; safe commands auto-run, dangerous ones require approval) |
+| `run_terminal_command` | Execute shell commands in a persistent stateful bash session (supports background isolated execution) |
 | `check_background_task` | Check the status and read recent output of a command running in the background |
 | `kill_background_task` | Kill a running background task |
 | `list_directory` | List files/folders with sizes, respecting `.gitignore` |
@@ -165,6 +167,14 @@ Aizen stores its config in `~/.aizen_config.json`:
   "DEFAULT_MODEL": "anthropic/claude-sonnet-4"
 }
 ```
+
+### Custom Plugin System
+
+Aizen supports a dead-simple custom Python plugin system! If you want to give the AI access to internal company APIs, smart home controls, or custom scripts, you can easily create custom tools.
+
+Just drop a `.py` file into `~/.aizen/plugins/` that exposes a tool schema and an execution function, and Aizen will automatically load it on startup. 
+
+See the full guide in [PLUGINS.md](PLUGINS.md) for a quick example!
 
 ### Model Context Protocol (MCP) Support
 

@@ -147,8 +147,8 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "run_command",
-            "description": "Executes a shell command. Safe read-only commands run automatically; destructive commands require user confirmation. Use the timeout parameter for long-running commands like builds or test suites.",
+            "name": "run_terminal_command",
+            "description": "Executes a shell command in a stateful, persistent bash session. Environment variables and working directory changes (cd) persist across calls. Use the timeout parameter for long-running commands like builds or test suites.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -162,7 +162,7 @@ tools = [
                     },
                     "background": {
                         "type": "boolean",
-                        "description": "If true, runs the command asynchronously in the background. Returns a task ID immediately.",
+                        "description": "If true, runs the command asynchronously in a separate isolated background process (not the persistent shell). Returns a task ID immediately.",
                     },
                 },
                 "required": ["command"],
@@ -374,7 +374,7 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
         console.print(tool_label)
         return multi_replace_file_content(filepath, chunks, auto_approve=auto_approve)
 
-    elif func_name == "run_command":
+    elif func_name == "run_terminal_command":
         command = str(args.get("command", ""))
         timeout = int(args.get("timeout", 120))
         background = bool(args.get("background", False))

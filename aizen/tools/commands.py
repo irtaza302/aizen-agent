@@ -24,16 +24,128 @@ background_tasks: dict[str, dict[str, Any]] = {}
 background_tasks_lock = threading.Lock()  # Protects background_tasks dict
 
 
+class PersistentTerminal:
+    """A stateful bash terminal session that persists across command executions."""
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.proc = None
+        self.marker = "===AIZEN_CMD_END==="
+        self.stdout_buf = []
+        self.stderr_buf = []
+
+    def _start(self):
+        self.proc = subprocess.Popen(
+            ["bash"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            env=os.environ.copy()
+        )
+
+        def reader(pipe, buf):
+            for line in iter(pipe.readline, ''):
+                buf.append(line)
+
+        threading.Thread(target=reader, args=(self.proc.stdout, self.stdout_buf), daemon=True).start()
+        threading.Thread(target=reader, args=(self.proc.stderr, self.stderr_buf), daemon=True).start()
+
+    def run(self, command: str, timeout: int = 120) -> tuple[str, str, int, bool, str]:
+        """Runs a command and returns (stdout, stderr, exit_code, timeout_occurred, new_pwd)."""
+        with self.lock:
+            if self.proc is None or self.proc.poll() is not None:
+                self._start()
+
+            self.stdout_buf.clear()
+            self.stderr_buf.clear()
+
+            marker_str = f"{self.marker}_{uuid.uuid4().hex[:8]}"
+            
+            # The payload. We echo the exit code and the current working directory.
+            cmd_payload = f"{command}\n__aizen_exit=$?; echo \"{marker_str}:$__aizen_exit:$(pwd)\"\n"
+            
+            try:
+                self.proc.stdin.write(cmd_payload)
+                self.proc.stdin.flush()
+            except BrokenPipeError:
+                self._start()
+                self.proc.stdin.write(cmd_payload)
+                self.proc.stdin.flush()
+
+            start_time = time.time()
+            exit_code = 0
+            timeout_occurred = False
+            new_pwd = ""
+
+            with Live(
+                Text("  ▶ Running...", style="dim italic"),
+                console=console,
+                refresh_per_second=4,
+                transient=True,
+            ) as live:
+                while True:
+                    elapsed = time.time() - start_time
+                    if elapsed > timeout:
+                        timeout_occurred = True
+                        break
+
+                    if self.proc.poll() is not None:
+                        break
+
+                    out_str = "".join(self.stdout_buf)
+                    if marker_str in out_str:
+                        # Give a tiny bit of time for stderr reader to catch up
+                        time.sleep(0.05)
+                        break
+
+                    tail = "".join(self.stdout_buf[-15:])
+                    display = Text()
+                    display.append(f"  ▶ Running ({elapsed:.0f}s)\n", style="dim italic")
+                    display.append(tail.rstrip(), style="dim")
+                    live.update(display)
+
+                    time.sleep(0.1)
+
+            out_str = "".join(self.stdout_buf)
+            err_str = "".join(self.stderr_buf)
+
+            final_out = []
+            for line in out_str.splitlines():
+                if line.startswith(marker_str):
+                    parts = line.split(":", 2)
+                    if len(parts) >= 2:
+                        try:
+                            exit_code = int(parts[1])
+                        except ValueError:
+                            pass
+                    if len(parts) >= 3:
+                        new_pwd = parts[2].strip()
+                    break
+                final_out.append(line)
+
+            output = "\n".join(final_out)
+            stderr_output = err_str.strip()
+
+            if timeout_occurred:
+                self.proc.kill()
+                self.proc = None
+
+            return output, stderr_output, exit_code, timeout_occurred, new_pwd
+
+
+# Global persistent terminal instance
+_terminal = PersistentTerminal()
+
+
 def is_command_safe(command: str) -> bool:
     """Check if a command is safe to auto-execute without confirmation."""
     cmd_stripped = command.strip()
 
-    # Check dangerous patterns first
     for pattern in DANGEROUS_PATTERNS:
         if re.search(pattern, cmd_stripped):
             return False
 
-    # Check safe prefixes
     for safe in SAFE_COMMAND_PREFIXES:
         if cmd_stripped == safe or cmd_stripped.startswith(safe + " "):
             return True
@@ -42,25 +154,10 @@ def is_command_safe(command: str) -> bool:
 
 
 def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 120, background: bool = False) -> str:
-    """Execute a shell command with safety checks, configurable timeout, and live output."""
+    """Execute a shell command with safety checks. Uses PersistentTerminal unless background=True."""
     logger.debug("run_command: %s (timeout=%ds, background=%s)", command, timeout, background)
 
-    # Intercept pure 'cd' commands to update process working directory persistently
-    cmd_stripped = command.strip()
-    if cmd_stripped.startswith("cd ") and not any(sep in cmd_stripped for sep in ["&&", ";", "||", "|"]):
-        target_dir = cmd_stripped[3:].strip()
-        target_dir = os.path.expanduser(target_dir.strip("\"'"))
-        try:
-            os.chdir(target_dir)
-            new_cwd = os.getcwd()
-            logger.info("Changed working directory to %s", new_cwd)
-            console.print(f"  [dim]▶ Changed directory to {new_cwd}[/dim]")
-            return f"Working directory changed to {new_cwd}"
-        except Exception as e:
-            logger.error("Failed to change directory to '%s': %s", target_dir, e)
-            return f"Error changing directory: {e}"
     safe = is_command_safe(command)
-
     if not safe:
         console.print(
             Panel(
@@ -75,18 +172,15 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
         console.print(f"  [dim]▶ {command}{' (background)' if background else ''}[/dim]")
 
     try:
-        # Use Popen for streaming output with live display
-        import select  # Not available at module level on all platforms
-
-        proc = subprocess.Popen(
-            command,
-            shell=True,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-
         if background:
+            # For background tasks, use isolated Popen so we don't block the persistent terminal
+            proc = subprocess.Popen(
+                command,
+                shell=True,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
             task_id = f"bg_{uuid.uuid4().hex[:8]}"
             task_info = {
                 "process": proc,
@@ -108,68 +202,31 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
 
             return f"Task started in background with ID: {task_id}"
 
-        stdout_lines: list[str] = []
-        stderr_lines: list[str] = []
-        start_time = time.time()
+        # Foreground interactive commands use the stateful terminal
+        output, stderr_output, exit_code, timeout_occurred, new_pwd = _terminal.run(command, timeout)
 
-        with Live(
-            Text("  ▶ Running...", style="dim italic"),
-            console=console,
-            refresh_per_second=4,
-            transient=True,
-        ) as live:
-            while proc.poll() is None:
-                elapsed = time.time() - start_time
-                if elapsed > timeout:
-                    proc.kill()
-                    logger.warning("Command timed out after %ds: %s", timeout, command)
-                    return f"Error: Command timed out after {timeout} seconds."
+        # Sync python's working directory with bash's working directory
+        if new_pwd and os.path.exists(new_pwd) and new_pwd != os.getcwd():
+            try:
+                os.chdir(new_pwd)
+                logger.info("Synced python cwd with bash: %s", new_pwd)
+            except Exception as e:
+                logger.error("Failed to sync python cwd with bash: %s", e)
 
-                reads = []
-                if proc.stdout:
-                    reads.append(proc.stdout)
-                if proc.stderr:
-                    reads.append(proc.stderr)
-
-                if reads:
-                    rlist, _, _ = select.select(reads, [], [], 0.1)
-                    for fd in rlist:
-                        if fd == proc.stdout:
-                            line = proc.stdout.readline()
-                            if line:
-                                stdout_lines.append(line)
-                                tail = "".join(stdout_lines[-15:])
-                                display = Text()
-                                display.append(f"  ▶ Running ({elapsed:.0f}s)\n", style="dim italic")
-                                display.append(tail.rstrip(), style="dim")
-                                live.update(display)
-                        elif fd == proc.stderr:
-                            line = proc.stderr.readline()
-                            if line:
-                                stderr_lines.append(line)
-
-            # Read remaining output after process exits
-            if proc.stdout:
-                remaining = proc.stdout.read()
-                if remaining:
-                    stdout_lines.append(remaining)
-            if proc.stderr:
-                stderr_lines.append(proc.stderr.read())
-
-        output = "".join(stdout_lines)
-        stderr_output = "".join(stderr_lines).strip()
+        if timeout_occurred:
+            logger.warning("Command timed out after %ds: %s", timeout, command)
+            return f"Error: Command timed out after {timeout} seconds.\nPartial Output:\n{output}"
 
         if stderr_output:
             if output:
                 output += f"\nSTDERR:\n{stderr_output}"
             else:
                 output = stderr_output
-        if proc.returncode != 0:
-            output += f"\n[Exit code: {proc.returncode}]"
-        return output.strip() if output.strip() else f"Command completed (exit code {proc.returncode})"
-    except subprocess.TimeoutExpired:
-        logger.warning("Command timed out after %ds: %s", timeout, command)
-        return f"Error: Command timed out after {timeout} seconds."
+        if exit_code != 0:
+            output += f"\n[Exit code: {exit_code}]"
+        
+        return output.strip() if output.strip() else f"Command completed (exit code {exit_code})"
+
     except Exception as e:
         logger.exception("Error executing command: %s", command)
         return f"Error executing command: {e}"

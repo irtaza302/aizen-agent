@@ -658,6 +658,10 @@ async def handle_slash_command(
                 console.print("[yellow]Commit aborted.[/yellow]\n")
                 return False
 
+            if final_msg is None:
+                console.print(f"  [{Theme.WARNING}]Commit aborted.[/{Theme.WARNING}]\n")
+                return False
+
             final_msg = final_msg.strip()
             if not final_msg:
                 console.print(f"  [{Theme.ERROR}]Error: Commit message cannot be empty. Aborted.[/{Theme.ERROR}]\n")
