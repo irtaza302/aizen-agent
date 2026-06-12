@@ -35,13 +35,15 @@ class TestConfig:
     def test_load_config_nonexistent(self, tmp_dir, monkeypatch):
         import aizen.config
         monkeypatch.setattr(aizen.config, "CONFIG_PATH", os.path.join(tmp_dir, "nope.json"))
+        monkeypatch.setattr(os, "getcwd", lambda: str(tmp_dir))
         monkeypatch.setattr(aizen.config, "migrate_legacy_data", lambda: None)
         config = load_config()
         assert config == {}
 
-    def test_load_config_existing(self, mock_config, monkeypatch):
+    def test_load_config_existing(self, mock_config, monkeypatch, tmp_dir):
         import aizen.config
         monkeypatch.setattr(aizen.config, "CONFIG_PATH", mock_config)
+        monkeypatch.setattr(os, "getcwd", lambda: str(tmp_dir))
         monkeypatch.setattr(aizen.config, "migrate_legacy_data", lambda: None)
         config = load_config()
         assert config["OPENROUTER_API_KEY"] == "sk-test-key-1234"
@@ -51,6 +53,7 @@ class TestConfig:
         import aizen.config
         config_path = os.path.join(tmp_dir, "test_config.json")
         monkeypatch.setattr(aizen.config, "CONFIG_PATH", config_path)
+        monkeypatch.setattr(os, "getcwd", lambda: str(tmp_dir))
         monkeypatch.setattr(aizen.config, "migrate_legacy_data", lambda: None)
 
         config = {"key": "value", "number": 42}
@@ -64,6 +67,7 @@ class TestConfig:
         import aizen.config
         config_path = os.path.join(tmp_dir, "bad.json")
         monkeypatch.setattr(aizen.config, "CONFIG_PATH", config_path)
+        monkeypatch.setattr(os, "getcwd", lambda: str(tmp_dir))
         monkeypatch.setattr(aizen.config, "migrate_legacy_data", lambda: None)
 
         with open(config_path, "w") as f:
