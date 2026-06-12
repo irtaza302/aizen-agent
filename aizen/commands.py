@@ -634,17 +634,21 @@ async def handle_slash_command(
             # Remove any markdown codeblocks if model didn't listen
             commit_msg = commit_msg.replace("```text", "").replace("```", "").strip()
 
-            console.print(f"\n  [bold {Theme.TEXT}]Generated Commit Message:[/bold {Theme.TEXT}]")
-            console.print(f"  [{Theme.ACCENT}]{commit_msg}[/{Theme.ACCENT}]\n")
+            if not commit_msg:
+                console.print(f"\n  [{Theme.WARNING}]⚠️ The model failed to generate a commit message.[/{Theme.WARNING}]")
+                action = "Edit message"
+            else:
+                console.print(f"\n  [bold {Theme.TEXT}]Generated Commit Message:[/bold {Theme.TEXT}]")
+                console.print(f"  [{Theme.ACCENT}]{commit_msg}[/{Theme.ACCENT}]\n")
 
-            action = await questionary.select(
-                "Commit with this message?",
-                choices=[
-                    "Yes, commit this",
-                    "Edit message",
-                    "Cancel"
-                ]
-            ).ask_async()
+                action = await questionary.select(
+                    "Commit with this message?",
+                    choices=[
+                        "Yes, commit this",
+                        "Edit message",
+                        "Cancel"
+                    ]
+                ).ask_async()
 
             if action == "Yes, commit this":
                 final_msg = commit_msg
@@ -652,6 +656,11 @@ async def handle_slash_command(
                 final_msg = await questionary.text("Edit message:", default=commit_msg).ask_async()
             else:
                 console.print("[yellow]Commit aborted.[/yellow]\n")
+                return False
+
+            final_msg = final_msg.strip()
+            if not final_msg:
+                console.print(f"  [{Theme.ERROR}]Error: Commit message cannot be empty. Aborted.[/{Theme.ERROR}]\n")
                 return False
 
             subprocess.run(["git", "commit", "-m", final_msg], check=True)
