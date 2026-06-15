@@ -4,7 +4,6 @@ venv/
 ORIGINAL_REQUEST.md
 __pycache__/
 *.pyc
-.env
 dist/
 build/
 *.egg-info/
@@ -13,7 +12,6 @@ homebrew-aizen/
 npm-package/
 
 # IDE & editor
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -33,3 +31,5 @@ Thumbs.db
 # Logs
 *.log
 .npmrc
+config.bat
+node_modules
