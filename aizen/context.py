@@ -183,6 +183,7 @@ class ContextPruner:
         Returns the number of messages modified.
         """
         import re
+
         dropped_count = 0
 
         # Keep the system prompt and the last couple of turns intact
@@ -192,10 +193,30 @@ class ContextPruner:
         for msg in messages[1:-2]:
             if msg.get("role") == "user" and msg.get("content"):
                 old_content = msg["content"]
-                new_content = re.sub(r'<file_context path="[^"]+">.*?</file_context>', '[File context dropped]', old_content, flags=re.DOTALL)
-                new_content = re.sub(r'<url_context url="[^"]+">.*?</url_context>', '[URL context dropped]', new_content, flags=re.DOTALL)
-                new_content = re.sub(r'<directory_context path="[^"]+">.*?</directory_context>', '[Directory context dropped]', new_content, flags=re.DOTALL)
-                new_content = re.sub(r'<command_context cmd="[^"]+">.*?</command_context>', '[Command context dropped]', new_content, flags=re.DOTALL)
+                new_content = re.sub(
+                    r'<file_context path="[^"]+">.*?</file_context>',
+                    "[File context dropped]",
+                    old_content,
+                    flags=re.DOTALL,
+                )
+                new_content = re.sub(
+                    r'<url_context url="[^"]+">.*?</url_context>',
+                    "[URL context dropped]",
+                    new_content,
+                    flags=re.DOTALL,
+                )
+                new_content = re.sub(
+                    r'<directory_context path="[^"]+">.*?</directory_context>',
+                    "[Directory context dropped]",
+                    new_content,
+                    flags=re.DOTALL,
+                )
+                new_content = re.sub(
+                    r'<command_context cmd="[^"]+">.*?</command_context>',
+                    "[Command context dropped]",
+                    new_content,
+                    flags=re.DOTALL,
+                )
 
                 if old_content != new_content:
                     msg["content"] = new_content
@@ -217,18 +238,24 @@ class ContextPruner:
         middle = messages[1:-recent_count]
 
         user_topics = [
-            m["content"][:100].replace('\n', ' ')
+            m["content"][:100].replace("\n", " ")
             for m in middle
             if m.get("role") == "user" and m.get("content")
         ]
 
-        summary = "Previous conversation summary: The user and assistant discussed " + "; ".join(user_topics[:5]) + ". The assistant helped with these requests."
+        summary = (
+            "Previous conversation summary: The user and assistant discussed "
+            + "; ".join(user_topics[:5])
+            + ". The assistant helped with these requests."
+        )
 
         messages[:] = [
             system_msg,
             {"role": "user", "content": f"Previous conversation summary:\n{summary}"},
-            {"role": "assistant", "content": "Understood. I have the context. How can I continue helping?"},
+            {
+                "role": "assistant",
+                "content": "Understood. I have the context. How can I continue helping?",
+            },
         ] + recent
 
         return summary
-

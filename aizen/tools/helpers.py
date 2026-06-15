@@ -31,16 +31,55 @@ from ..utils import BackupManager, load_gitignore_patterns, should_ignore
 
 MAX_FILE_SIZE_BYTES = 1_048_576  # 1 MB — refuse to read files larger than this
 MAX_FILE_SIZE_WARNING = 512_000  # 512 KB — warn but allow
-BINARY_EXTENSIONS = frozenset({
-    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".svg",
-    ".mp3", ".mp4", ".wav", ".avi", ".mov", ".mkv",
-    ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
-    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-    ".exe", ".dll", ".so", ".dylib", ".bin", ".dat",
-    ".pyc", ".pyo", ".class", ".o", ".obj",
-    ".woff", ".woff2", ".ttf", ".otf", ".eot",
-    ".sqlite", ".db",
-})
+BINARY_EXTENSIONS = frozenset(
+    {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".bmp",
+        ".ico",
+        ".webp",
+        ".svg",
+        ".mp3",
+        ".mp4",
+        ".wav",
+        ".avi",
+        ".mov",
+        ".mkv",
+        ".zip",
+        ".tar",
+        ".gz",
+        ".bz2",
+        ".7z",
+        ".rar",
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".ppt",
+        ".pptx",
+        ".exe",
+        ".dll",
+        ".so",
+        ".dylib",
+        ".bin",
+        ".dat",
+        ".pyc",
+        ".pyo",
+        ".class",
+        ".o",
+        ".obj",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".otf",
+        ".eot",
+        ".sqlite",
+        ".db",
+    }
+)
 
 # Global terminal lock to prevent garbled output from concurrent tool runs
 terminal_lock = threading.Lock()
@@ -52,6 +91,7 @@ _session_auto_approve = False
 
 # ─── Approval ───────────────────────────────────────────────────────────────────
 
+
 def _ask_permission(prompt_text: str, auto_approve: bool = False) -> bool:
     """Helper to handle approval prompts with a session-wide 'always' option."""
     global _session_auto_approve
@@ -60,26 +100,28 @@ def _ask_permission(prompt_text: str, auto_approve: bool = False) -> bool:
 
     # We must use synchronous input since tools run in threads
     try:
-        custom_style = Style([
-            ('qmark', 'fg:#c084fc bold'),
-            ('question', 'fg:#e2e8f0 bold'),
-            ('answer', 'fg:#22d3ee bold'),
-            ('pointer', 'fg:#c084fc bold'),
-            ('highlighted', 'fg:#ffffff bold'),
-            ('selected', 'fg:#22d3ee'),
-            ('separator', 'fg:#6b7280'),
-            ('instruction', 'fg:#6b7280'),
-        ])
+        custom_style = Style(
+            [
+                ("qmark", "fg:#c084fc bold"),
+                ("question", "fg:#e2e8f0 bold"),
+                ("answer", "fg:#22d3ee bold"),
+                ("pointer", "fg:#c084fc bold"),
+                ("highlighted", "fg:#ffffff bold"),
+                ("selected", "fg:#22d3ee"),
+                ("separator", "fg:#6b7280"),
+                ("instruction", "fg:#6b7280"),
+            ]
+        )
 
         ans = questionary.select(
             prompt_text.strip(),
             choices=[
                 questionary.Choice("Yes, allow this time", "y"),
                 questionary.Choice("No, deny", "n"),
-                questionary.Choice("Always allow (YOLO mode)", "a")
+                questionary.Choice("Always allow (YOLO mode)", "a"),
             ],
             style=custom_style,
-            instruction=" (Use ↑/↓ arrows to select, Enter to submit)"
+            instruction=" (Use ↑/↓ arrows to select, Enter to submit)",
         ).ask()
 
         if not ans:
@@ -87,7 +129,9 @@ def _ask_permission(prompt_text: str, auto_approve: bool = False) -> bool:
 
         if ans in ("a", "always"):
             _session_auto_approve = True
-            console.print(f"  [{Theme.SUCCESS}]✓ Always allow enabled and saved for future sessions.[/{Theme.SUCCESS}]")
+            console.print(
+                f"  [{Theme.SUCCESS}]✓ Always allow enabled and saved for future sessions.[/{Theme.SUCCESS}]"
+            )
             try:
                 conf = load_config()
                 conf["auto_approve"] = True
@@ -103,6 +147,7 @@ def _ask_permission(prompt_text: str, auto_approve: bool = False) -> bool:
 
 # ─── File Helpers ───────────────────────────────────────────────────────────────
 
+
 def is_binary_file(filepath: str) -> bool:
     """Check if a file is likely binary based on extension."""
     _, ext = os.path.splitext(filepath.lower())
@@ -112,15 +157,38 @@ def is_binary_file(filepath: str) -> bool:
 def detect_language(filepath: str) -> str:
     """Detect Rich Syntax language from file extension for diff highlighting."""
     ext_map = {
-        ".py": "python", ".js": "javascript", ".ts": "typescript",
-        ".jsx": "jsx", ".tsx": "tsx", ".html": "html", ".css": "css",
-        ".json": "json", ".yaml": "yaml", ".yml": "yaml", ".toml": "toml",
-        ".md": "markdown", ".rs": "rust", ".go": "go", ".java": "java",
-        ".c": "c", ".cpp": "cpp", ".h": "c", ".hpp": "cpp",
-        ".rb": "ruby", ".php": "php", ".sh": "bash", ".bash": "bash",
-        ".zsh": "bash", ".sql": "sql", ".xml": "xml", ".swift": "swift",
-        ".kt": "kotlin", ".scala": "scala", ".r": "r",
-        ".dockerfile": "dockerfile", ".tf": "hcl",
+        ".py": "python",
+        ".js": "javascript",
+        ".ts": "typescript",
+        ".jsx": "jsx",
+        ".tsx": "tsx",
+        ".html": "html",
+        ".css": "css",
+        ".json": "json",
+        ".yaml": "yaml",
+        ".yml": "yaml",
+        ".toml": "toml",
+        ".md": "markdown",
+        ".rs": "rust",
+        ".go": "go",
+        ".java": "java",
+        ".c": "c",
+        ".cpp": "cpp",
+        ".h": "c",
+        ".hpp": "cpp",
+        ".rb": "ruby",
+        ".php": "php",
+        ".sh": "bash",
+        ".bash": "bash",
+        ".zsh": "bash",
+        ".sql": "sql",
+        ".xml": "xml",
+        ".swift": "swift",
+        ".kt": "kotlin",
+        ".scala": "scala",
+        ".r": "r",
+        ".dockerfile": "dockerfile",
+        ".tf": "hcl",
     }
     _, ext = os.path.splitext(filepath.lower())
     basename = os.path.basename(filepath).lower()
@@ -220,7 +288,9 @@ def validate_syntax(filepath: str, file_content: str) -> str | None:
                 tmp.write(file_content)
                 tmp_path = tmp.name
             try:
-                result = subprocess.run(["eslint", "--no-warn-ignored", tmp_path], capture_output=True, text=True)
+                result = subprocess.run(
+                    ["eslint", "--no-warn-ignored", tmp_path], capture_output=True, text=True
+                )
                 if result.returncode != 0:
                     output = result.stdout.replace(tmp_path, os.path.basename(filepath))
                     return f"ESLint Error:\n{output}"
@@ -267,7 +337,9 @@ def fuzzy_match_file(filepath: str) -> str | None:
     return matches[0] if matches else None
 
 
-def fuzzy_find_block(file_lines: list[str], target_content: str, start_line: int, end_line: int) -> str | None:
+def fuzzy_find_block(
+    file_lines: list[str], target_content: str, start_line: int, end_line: int
+) -> str | None:
     """Find the best match for target_content within the specified line bounds."""
     start_idx = max(0, start_line - 1)
     end_idx = min(len(file_lines), end_line)
@@ -277,10 +349,10 @@ def fuzzy_find_block(file_lines: list[str], target_content: str, start_line: int
     if target_content in search_str:
         return target_content
 
-    parts = re.split(r'\s+', target_content.strip())
+    parts = re.split(r"\s+", target_content.strip())
     escaped_parts = [re.escape(p) for p in parts if p]
     if escaped_parts:
-        pattern_str = r'\s+'.join(escaped_parts)
+        pattern_str = r"\s+".join(escaped_parts)
         try:
             matches = list(re.finditer(pattern_str, search_str))
             if len(matches) == 1:
@@ -297,7 +369,7 @@ def fuzzy_find_block(file_lines: list[str], target_content: str, start_line: int
     window_size = len(target_lines)
 
     for i in range(len(search_lines) - window_size + 1):
-        window = "".join(search_lines[i:i + window_size])
+        window = "".join(search_lines[i : i + window_size])
         ratio = difflib.SequenceMatcher(None, target_content, window).ratio()
         if ratio > best_ratio:
             best_ratio = ratio
@@ -327,12 +399,18 @@ def check_git_dirty(filepath: str) -> None:
         abs_dir = os.path.dirname(os.path.abspath(filepath))
         repo_dir = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
-            cwd=abs_dir, capture_output=True, text=True, check=True
+            cwd=abs_dir,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
 
         status = subprocess.run(
             ["git", "status", "--porcelain"],
-            cwd=repo_dir, capture_output=True, text=True, check=True
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.strip()
 
         if status:

@@ -47,6 +47,16 @@ SLASH_COMMANDS = [
     ("/auto", "Enter autonomous agentic mode for a complex task"),
     ("/search", "Search the codebase using semantic (RAG) search"),
     ("/reindex", "Reindex the codebase for semantic search"),
+    ("/remember", "Store a fact in persistent memory"),
+    ("/memory", "View all stored memories"),
+    ("/forget", "Remove a memory by ID (or 'all')"),
+    ("/pr", "Create a GitHub PR with AI-generated description"),
+    ("/branch", "Create and switch to a new git branch"),
+    ("/stash", "Stash changes with an AI-generated message"),
+    ("/amend", "Amend the last commit with a regenerated message"),
+    ("/log", "Show recent git commits"),
+    ("/budget", "View or set session cost budget"),
+    ("/stats", "Show cross-session usage analytics"),
 ]
 
 # In-memory checkpoint storage for conversation branching
@@ -69,7 +79,21 @@ class AizenCompleter(Completer):
         if stripped.startswith("/"):
             if " " not in stripped:
                 query = stripped.lower()
-                cmds_with_args = {"/model", "/save", "/load", "/export", "/checkpoint", "/restore", "/search", "/reindex"}
+                cmds_with_args = {
+                    "/model",
+                    "/save",
+                    "/load",
+                    "/export",
+                    "/checkpoint",
+                    "/restore",
+                    "/search",
+                    "/reindex",
+                    "/remember",
+                    "/forget",
+                    "/pr",
+                    "/branch",
+                    "/budget",
+                }
                 for cmd, description in SLASH_COMMANDS:
                     if cmd.startswith(query):
                         completion_text = cmd + " " if cmd in cmds_with_args else cmd
@@ -83,12 +107,16 @@ class AizenCompleter(Completer):
                 query = stripped[7:].lower()
                 models = get_cached_models()
                 for m in models:
-                    if m["id"].lower().startswith(query) or query in m["id"].lower() or query in m["name"].lower():
+                    if (
+                        m["id"].lower().startswith(query)
+                        or query in m["id"].lower()
+                        or query in m["name"].lower()
+                    ):
                         yield Completion(
                             m["id"],
                             start_position=-len(query),
                             display=m["id"],
-                            display_meta=m["name"]
+                            display_meta=m["name"],
                         )
             return
 
@@ -117,9 +145,7 @@ class AizenCompleter(Completer):
                                 display = os.path.join(dir_part, item)
                                 if os.path.isdir(item_path):
                                     display += "/"
-                                yield Completion(
-                                    display, start_position=-len(query)
-                                )
+                                yield Completion(display, start_position=-len(query))
                 except Exception as e:
                     logger.debug("Failed to list directory contents for autocomplete: %s", e)
         else:
@@ -129,13 +155,9 @@ class AizenCompleter(Completer):
                         item_path = item
                         if not should_ignore(item_path, self.ignore_patterns):
                             if os.path.isdir(item):
-                                yield Completion(
-                                    item + "/", start_position=-len(query)
-                                )
+                                yield Completion(item + "/", start_position=-len(query))
                             elif os.path.isfile(item):
-                                yield Completion(
-                                    item, start_position=-len(query)
-                                )
+                                yield Completion(item, start_position=-len(query))
             except Exception as e:
                 logger.debug("Failed to list current directory for autocomplete: %s", e)
 
@@ -162,42 +184,48 @@ async def handle_slash_command(
                 old_content = msg["content"]
                 new_content = re.sub(
                     r'<file_context path="[^"]+">.*?</file_context>',
-                    '[File context dropped to save tokens]',
+                    "[File context dropped to save tokens]",
                     old_content,
-                    flags=re.DOTALL
+                    flags=re.DOTALL,
                 )
                 new_content = re.sub(
                     r'<url_context url="[^"]+">.*?</url_context>',
-                    '[URL context dropped to save tokens]',
+                    "[URL context dropped to save tokens]",
                     new_content,
-                    flags=re.DOTALL
+                    flags=re.DOTALL,
                 )
                 new_content = re.sub(
                     r'<directory_context path="[^"]+">.*?</directory_context>',
-                    '[Directory context dropped to save tokens]',
+                    "[Directory context dropped to save tokens]",
                     new_content,
-                    flags=re.DOTALL
+                    flags=re.DOTALL,
                 )
                 new_content = re.sub(
                     r'<command_context cmd="[^"]+">.*?</command_context>',
-                    '[Command context dropped to save tokens]',
+                    "[Command context dropped to save tokens]",
                     new_content,
-                    flags=re.DOTALL
+                    flags=re.DOTALL,
                 )
                 if old_content != new_content:
                     msg["content"] = new_content
                     dropped_count += 1
         if dropped_count > 0:
-            console.print(f"  [{Theme.SUCCESS}]✓ Dropped attached contexts from {dropped_count} past messages.[/{Theme.SUCCESS}]\n")
+            console.print(
+                f"  [{Theme.SUCCESS}]✓ Dropped attached contexts from {dropped_count} past messages.[/{Theme.SUCCESS}]\n"
+            )
         else:
-            console.print(f"  [{Theme.WARNING}]No attached contexts found to drop.[/{Theme.WARNING}]\n")
+            console.print(
+                f"  [{Theme.WARNING}]No attached contexts found to drop.[/{Theme.WARNING}]\n"
+            )
 
     elif cmd == "/model":
         if arg:
             if arg.startswith("search ") or arg == "list" or arg == "search":
                 models = get_cached_models()
                 if not models:
-                    console.print(f"  [{Theme.WARNING}]Model list is still fetching or unavailable. Try again in a moment.[/{Theme.WARNING}]\n")
+                    console.print(
+                        f"  [{Theme.WARNING}]Model list is still fetching or unavailable. Try again in a moment.[/{Theme.WARNING}]\n"
+                    )
                     return False
 
                 search_query = arg[7:].lower().strip() if arg.startswith("search ") else ""
@@ -214,7 +242,11 @@ async def handle_slash_command(
 
                 count = 0
                 for m in models:
-                    if not search_query or search_query in m["id"].lower() or search_query in m["name"].lower():
+                    if (
+                        not search_query
+                        or search_query in m["id"].lower()
+                        or search_query in m["name"].lower()
+                    ):
                         pricing = m.get("pricing") or {}
                         price_prompt = pricing.get("prompt", "?")
                         price_comp = pricing.get("completion", "?")
@@ -226,7 +258,9 @@ async def handle_slash_command(
 
                 console.print(table)
                 if count >= 30:
-                    console.print(f"  [{Theme.MUTED}]... and more (showing top 30). Use `/model search <query>` to narrow down.[/{Theme.MUTED}]\n")
+                    console.print(
+                        f"  [{Theme.MUTED}]... and more (showing top 30). Use `/model search <query>` to narrow down.[/{Theme.MUTED}]\n"
+                    )
                 else:
                     console.print()
             else:
@@ -234,14 +268,22 @@ async def handle_slash_command(
                 found = any(m["id"] == arg for m in models)
 
                 if models and not found:
-                    console.print(f"  [{Theme.WARNING}]⚠️  Warning: Model '{arg}' not found in OpenRouter API list.[/{Theme.WARNING}]")
+                    console.print(
+                        f"  [{Theme.WARNING}]⚠️  Warning: Model '{arg}' not found in OpenRouter API list.[/{Theme.WARNING}]"
+                    )
 
                 set_active_model(arg, save=True)
-                console.print(f"  [{Theme.SUCCESS}]✓ Model switched to:[/{Theme.SUCCESS}] [bold {Theme.ACCENT}]{arg}[/bold {Theme.ACCENT}]\n")
+                console.print(
+                    f"  [{Theme.SUCCESS}]✓ Model switched to:[/{Theme.SUCCESS}] [bold {Theme.ACCENT}]{arg}[/bold {Theme.ACCENT}]\n"
+                )
         else:
-            console.print(f"  [bold {Theme.TEXT}]Current model:[/bold {Theme.TEXT}] [{Theme.ACCENT}]{current_model}[/{Theme.ACCENT}]")
+            console.print(
+                f"  [bold {Theme.TEXT}]Current model:[/bold {Theme.TEXT}] [{Theme.ACCENT}]{current_model}[/{Theme.ACCENT}]"
+            )
             console.print(f"  [{Theme.MUTED}]Usage: /model <model_name>[/{Theme.MUTED}]")
-            console.print(f"  [{Theme.MUTED}]       /model search <query>  (or `/model list`)[/{Theme.MUTED}]\n")
+            console.print(
+                f"  [{Theme.MUTED}]       /model search <query>  (or `/model list`)[/{Theme.MUTED}]\n"
+            )
 
     elif cmd == "/help":
         help_table = Table(
@@ -289,18 +331,27 @@ async def handle_slash_command(
 
         # ── Search & RAG ──
         help_table.add_row(f"[bold {Theme.MUTED}]── Search & RAG ──[/bold {Theme.MUTED}]", "")
-        help_table.add_row("  🔍 /search [query]", "Search the codebase using semantic (RAG) search")
+        help_table.add_row(
+            "  🔍 /search [query]", "Search the codebase using semantic (RAG) search"
+        )
         help_table.add_row("  🔄 /reindex [dir]", "Reindex the codebase for semantic search")
 
         # ── Agent ──
         help_table.add_row(f"[bold {Theme.MUTED}]── Agent ──[/bold {Theme.MUTED}]", "")
-        help_table.add_row("  🤖 /auto [task]", "Enter autonomous mode for a complex task (max iterations apply)")
+        help_table.add_row(
+            "  🤖 /auto [task]", "Enter autonomous mode for a complex task (max iterations apply)"
+        )
 
         # ── Shortcuts ──
         help_table.add_row(f"[bold {Theme.MUTED}]── Shortcuts ──[/bold {Theme.MUTED}]", "")
-        help_table.add_row(f"  [{Theme.PINK}]@file / @url[/{Theme.PINK}]", "Attach file context or web URL")
+        help_table.add_row(
+            f"  [{Theme.PINK}]@file / @url[/{Theme.PINK}]", "Attach file context or web URL"
+        )
         help_table.add_row(f"  [{Theme.PINK}]exit / quit[/{Theme.PINK}]", "Exit Aizen")
-        help_table.add_row(f"  [{Theme.MUTED}]Tip[/{Theme.MUTED}]", f"[{Theme.MUTED}]End a line with \\\\ for multi-line input[/{Theme.MUTED}]")
+        help_table.add_row(
+            f"  [{Theme.MUTED}]Tip[/{Theme.MUTED}]",
+            f"[{Theme.MUTED}]End a line with \\\\ for multi-line input[/{Theme.MUTED}]",
+        )
         console.print(help_table)
         console.print()
 
@@ -381,9 +432,7 @@ async def handle_slash_command(
                         check=True,
                     )
                 else:
-                    subprocess.run(
-                        ["clip"], input=last_response, text=True, check=True
-                    )
+                    subprocess.run(["clip"], input=last_response, text=True, check=True)
                 console.print(f"  [{Theme.SUCCESS}]✓ Copied to clipboard.[/{Theme.SUCCESS}]\n")
             except Exception:
                 console.print(
@@ -393,17 +442,11 @@ async def handle_slash_command(
             console.print(f"  [{Theme.WARNING}]No response to copy.[/{Theme.WARNING}]\n")
 
     elif cmd == "/export":
-        filename = (
-            arg
-            if arg
-            else f"aizen_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
-        )
+        filename = arg if arg else f"aizen_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
         try:
             with open(filename, "w") as f:
                 f.write("# Aizen Conversation Export\n\n")
-                f.write(
-                    f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                )
+                f.write(f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write(f"**Model:** {current_model}\n\n---\n\n")
                 for msg in messages:
                     if msg["role"] == "system":
@@ -418,7 +461,9 @@ async def handle_slash_command(
 
     elif cmd == "/compact":
         if len(messages) <= 4:
-            console.print(f"  [{Theme.WARNING}]Conversation is already compact.[/{Theme.WARNING}]\n")
+            console.print(
+                f"  [{Theme.WARNING}]Conversation is already compact.[/{Theme.WARNING}]\n"
+            )
         else:
             system_msg = messages[0]
             recent = messages[-4:]
@@ -426,7 +471,9 @@ async def handle_slash_command(
 
             if middle:
                 # Attempt LLM-based summarization for much better context retention
-                console.print(f"  [{Theme.MUTED}]Summarizing conversation with AI...[/{Theme.MUTED}]")
+                console.print(
+                    f"  [{Theme.MUTED}]Summarizing conversation with AI...[/{Theme.MUTED}]"
+                )
                 try:
                     # Use the client passed to handle_slash_command
                     _client = client
@@ -483,7 +530,9 @@ async def handle_slash_command(
                     f"  [{Theme.SUCCESS}]✓ Compacted {len(middle)} messages into an AI-generated summary.[/{Theme.SUCCESS}]\n"
                 )
             else:
-                console.print(f"  [{Theme.WARNING}]Not enough messages to compact.[/{Theme.WARNING}]\n")
+                console.print(
+                    f"  [{Theme.WARNING}]Not enough messages to compact.[/{Theme.WARNING}]\n"
+                )
 
     elif cmd == "/config":
         config = load_config()
@@ -513,8 +562,12 @@ async def handle_slash_command(
             return False
 
         if not mcp_manager.config:
-            console.print(f"  [{Theme.WARNING}]No MCP servers configured in ~/.aizen_config.json[/{Theme.WARNING}]\n")
-            console.print(f"  [{Theme.MUTED}]Add an 'mcp_servers' block to your config to enable MCP plugins.[/{Theme.MUTED}]\n")
+            console.print(
+                f"  [{Theme.WARNING}]No MCP servers configured in ~/.aizen_config.json[/{Theme.WARNING}]\n"
+            )
+            console.print(
+                f"  [{Theme.MUTED}]Add an 'mcp_servers' block to your config to enable MCP plugins.[/{Theme.MUTED}]\n"
+            )
             return False
 
         table = Table(
@@ -534,7 +587,7 @@ async def handle_slash_command(
             for server_name in mcp_manager.config.keys():
                 prefix = f"mcp_{server_name}_"
                 if name.startswith(prefix):
-                    server_tools[server_name].append(name[len(prefix):])
+                    server_tools[server_name].append(name[len(prefix) :])
                     break
 
         for server_name in mcp_manager.config.keys():
@@ -568,7 +621,9 @@ async def handle_slash_command(
     elif cmd == "/restore":
         if not arg:
             if not _checkpoints:
-                console.print(f"  [{Theme.WARNING}]No checkpoints saved. Use /checkpoint [name] first.[/{Theme.WARNING}]\n")
+                console.print(
+                    f"  [{Theme.WARNING}]No checkpoints saved. Use /checkpoint [name] first.[/{Theme.WARNING}]\n"
+                )
             else:
                 table = Table(
                     title="📌 Checkpoints",
@@ -592,41 +647,58 @@ async def handle_slash_command(
 
     elif cmd == "/commit":
         if not client:
-            console.print(f"  [{Theme.ERROR}]API client is not available for /commit.[/{Theme.ERROR}]\n")
+            console.print(
+                f"  [{Theme.ERROR}]API client is not available for /commit.[/{Theme.ERROR}]\n"
+            )
             return False
 
         try:
             # Check staged changes
-            result = subprocess.run(["git", "diff", "--cached"], capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                ["git", "diff", "--cached"], capture_output=True, text=True, check=True
+            )
             diff = result.stdout.strip()
 
             if not diff:
                 # Check unstaged
-                result_unstaged = subprocess.run(["git", "diff"], capture_output=True, text=True, check=True)
+                result_unstaged = subprocess.run(
+                    ["git", "diff"], capture_output=True, text=True, check=True
+                )
                 unstaged_diff = result_unstaged.stdout.strip()
 
                 if not unstaged_diff:
-                    console.print(f"  [{Theme.WARNING}]No changes found to commit.[/{Theme.WARNING}]\n")
+                    console.print(
+                        f"  [{Theme.WARNING}]No changes found to commit.[/{Theme.WARNING}]\n"
+                    )
                     return False
 
-                answer = await questionary.confirm("No staged changes. Stage all current changes?").ask_async()
+                answer = await questionary.confirm(
+                    "No staged changes. Stage all current changes?"
+                ).ask_async()
                 if not answer:
                     console.print(f"  [{Theme.WARNING}]Commit aborted.[/{Theme.WARNING}]\n")
                     return False
 
                 subprocess.run(["git", "add", "-u"], check=True)
-                result = subprocess.run(["git", "diff", "--cached"], capture_output=True, text=True, check=True)
+                result = subprocess.run(
+                    ["git", "diff", "--cached"], capture_output=True, text=True, check=True
+                )
                 diff = result.stdout.strip()
 
             if not diff:
-                console.print(f"  [{Theme.WARNING}]No changes staged to commit.[/{Theme.WARNING}]\n")
+                console.print(
+                    f"  [{Theme.WARNING}]No changes staged to commit.[/{Theme.WARNING}]\n"
+                )
                 return False
 
             console.print(f"  [{Theme.MUTED}]Generating commit message...[/{Theme.MUTED}]")
 
             commit_messages = [
-                {"role": "system", "content": "You are a senior developer. Write a concise, conventional commit message for the following diff. Output ONLY the commit message, no explanation, no markdown blocks."},
-                {"role": "user", "content": f"Diff:\n{diff[:10000]}"}
+                {
+                    "role": "system",
+                    "content": "You are a senior developer. Write a concise, conventional commit message for the following diff. Output ONLY the commit message, no explanation, no markdown blocks.",
+                },
+                {"role": "user", "content": f"Diff:\n{diff[:10000]}"},
             ]
 
             response = await client.chat.completions.create(
@@ -640,19 +712,19 @@ async def handle_slash_command(
             commit_msg = commit_msg.replace("```text", "").replace("```", "").strip()
 
             if not commit_msg:
-                console.print(f"\n  [{Theme.WARNING}]⚠️ The model failed to generate a commit message.[/{Theme.WARNING}]")
+                console.print(
+                    f"\n  [{Theme.WARNING}]⚠️ The model failed to generate a commit message.[/{Theme.WARNING}]"
+                )
                 action = "Edit message"
             else:
-                console.print(f"\n  [bold {Theme.TEXT}]Generated Commit Message:[/bold {Theme.TEXT}]")
+                console.print(
+                    f"\n  [bold {Theme.TEXT}]Generated Commit Message:[/bold {Theme.TEXT}]"
+                )
                 console.print(f"  [{Theme.ACCENT}]{commit_msg}[/{Theme.ACCENT}]\n")
 
                 action = await questionary.select(
                     "Commit with this message?",
-                    choices=[
-                        "Yes, commit this",
-                        "Edit message",
-                        "Cancel"
-                    ]
+                    choices=["Yes, commit this", "Edit message", "Cancel"],
                 ).ask_async()
 
             if action == "Yes, commit this":
@@ -669,14 +741,18 @@ async def handle_slash_command(
 
             final_msg = final_msg.strip()
             if not final_msg:
-                console.print(f"  [{Theme.ERROR}]Error: Commit message cannot be empty. Aborted.[/{Theme.ERROR}]\n")
+                console.print(
+                    f"  [{Theme.ERROR}]Error: Commit message cannot be empty. Aborted.[/{Theme.ERROR}]\n"
+                )
                 return False
 
             subprocess.run(["git", "commit", "-m", final_msg], check=True)
             console.print(f"  [{Theme.SUCCESS}]✓ Committed successfully.[/{Theme.SUCCESS}]\n")
 
         except subprocess.CalledProcessError:
-            console.print(f"  [{Theme.ERROR}]Error: Not a git repository or git command failed.[/{Theme.ERROR}]\n")
+            console.print(
+                f"  [{Theme.ERROR}]Error: Not a git repository or git command failed.[/{Theme.ERROR}]\n"
+            )
         except Exception as e:
             console.print(f"  [{Theme.ERROR}]Error during auto-commit: {e}[/{Theme.ERROR}]\n")
 
@@ -684,16 +760,16 @@ async def handle_slash_command(
         try:
             # Show staged + unstaged changes
             result_staged = subprocess.run(
-                ["git", "diff", "--cached", "--stat"],
-                capture_output=True, text=True, check=True
+                ["git", "diff", "--cached", "--stat"], capture_output=True, text=True, check=True
             )
             result_unstaged = subprocess.run(
-                ["git", "diff", "--stat"],
-                capture_output=True, text=True, check=True
+                ["git", "diff", "--stat"], capture_output=True, text=True, check=True
             )
             result_untracked = subprocess.run(
                 ["git", "ls-files", "--others", "--exclude-standard"],
-                capture_output=True, text=True, check=True
+                capture_output=True,
+                text=True,
+                check=True,
             )
 
             has_output = False
@@ -710,7 +786,9 @@ async def handle_slash_command(
 
             if result_untracked.stdout.strip():
                 untracked = result_untracked.stdout.strip().split("\n")
-                console.print(f"  [bold {Theme.ACCENT}]Untracked files ({len(untracked)}):[/bold {Theme.ACCENT}]")
+                console.print(
+                    f"  [bold {Theme.ACCENT}]Untracked files ({len(untracked)}):[/bold {Theme.ACCENT}]"
+                )
                 for f in untracked[:20]:
                     console.print(f"  [dim]+ {f}[/dim]")
                 if len(untracked) > 20:
@@ -723,22 +801,25 @@ async def handle_slash_command(
             # Show full diff if requested
             if arg == "--full" or arg == "-f":
                 result_full = subprocess.run(
-                    ["git", "diff"],
-                    capture_output=True, text=True, check=True
+                    ["git", "diff"], capture_output=True, text=True, check=True
                 )
                 if result_full.stdout.strip():
                     from rich.syntax import Syntax
+
                     syntax = Syntax(result_full.stdout, "diff", theme="monokai")
                     console.print(syntax)
 
             console.print()
         except subprocess.CalledProcessError:
-            console.print(f"  [{Theme.ERROR}]Error: Not a git repository or git command failed.[/{Theme.ERROR}]\n")
+            console.print(
+                f"  [{Theme.ERROR}]Error: Not a git repository or git command failed.[/{Theme.ERROR}]\n"
+            )
         except Exception as e:
             console.print(f"  [{Theme.ERROR}]Error showing diff: {e}[/{Theme.ERROR}]\n")
 
     elif cmd == "/search":
         from .rag import SlashCommandRunner, get_global_embedding_generator, get_global_vector_store
+
         runner = SlashCommandRunner(get_global_vector_store(), get_global_embedding_generator())
         runner.run(command_str, console)
         console.print()
@@ -747,13 +828,283 @@ async def handle_slash_command(
         import asyncio
 
         from .rag import reindex_directory
+
         target_dir = arg if arg else "."
-        console.print(f"  [{Theme.MUTED}]Re-indexing codebase directory '{target_dir}' in background...[/{Theme.MUTED}]")
+        console.print(
+            f"  [{Theme.MUTED}]Re-indexing codebase directory '{target_dir}' in background...[/{Theme.MUTED}]"
+        )
         try:
             await asyncio.to_thread(reindex_directory, target_dir)
             console.print(f"  [{Theme.SUCCESS}]✓ Reindexing complete.[/{Theme.SUCCESS}]\n")
         except Exception as e:
             console.print(f"  [{Theme.ERROR}]Error during reindexing: {e}[/{Theme.ERROR}]\n")
+
+    elif cmd == "/remember":
+        if not arg:
+            console.print(
+                f"  [{Theme.WARNING}]Usage: /remember <fact to remember>[/{Theme.WARNING}]"
+            )
+            console.print(
+                f"  [{Theme.MUTED}]Example: /remember This project uses FastAPI with SQLAlchemy[/{Theme.MUTED}]\n"
+            )
+        else:
+            from .memory import get_memory_store
+
+            memory = get_memory_store()
+            project_name = os.path.basename(os.getcwd())
+            memory_id = memory.remember(arg, source="user", project=project_name)
+            console.print(
+                f"  [{Theme.SUCCESS}]✓ Remembered (#{memory_id}): {arg}[/{Theme.SUCCESS}]\n"
+            )
+
+    elif cmd == "/memory":
+        from .memory import get_memory_store
+
+        memory = get_memory_store()
+        project_name = os.path.basename(os.getcwd())
+        memories = memory.list_all(project=project_name)
+        if not memories:
+            console.print(
+                f"  [{Theme.MUTED}]No memories stored yet. Use /remember <fact> to add one.[/{Theme.MUTED}]\n"
+            )
+        else:
+            table = Table(
+                title="🧠 Persistent Memory",
+                border_style=Theme.BORDER,
+                title_style=f"bold {Theme.ACCENT}",
+            )
+            table.add_column("ID", style=Theme.MUTED, width=5)
+            table.add_column("Fact", style=Theme.TEXT, ratio=3)
+            table.add_column("Category", style=Theme.SECONDARY, width=14)
+            table.add_column("Source", style=Theme.MUTED, width=8)
+            for mem in memories:
+                table.add_row(
+                    str(mem["id"]),
+                    mem["fact"][:120],
+                    mem.get("category", "general"),
+                    mem.get("source", "user"),
+                )
+            console.print(table)
+            console.print()
+
+    elif cmd == "/forget":
+        if not arg:
+            console.print(
+                f"  [{Theme.WARNING}]Usage: /forget <id> or /forget all[/{Theme.WARNING}]\n"
+            )
+        else:
+            from .memory import get_memory_store
+
+            memory = get_memory_store()
+            if arg.lower() == "all":
+                project_name = os.path.basename(os.getcwd())
+                count = memory.forget_all(project=project_name)
+                console.print(
+                    f"  [{Theme.SUCCESS}]✓ Deleted {count} memories for this project.[/{Theme.SUCCESS}]\n"
+                )
+            else:
+                try:
+                    memory_id = int(arg)
+                    if memory.forget(memory_id):
+                        console.print(
+                            f"  [{Theme.SUCCESS}]✓ Memory #{memory_id} deleted.[/{Theme.SUCCESS}]\n"
+                        )
+                    else:
+                        console.print(
+                            f"  [{Theme.ERROR}]Memory #{memory_id} not found.[/{Theme.ERROR}]\n"
+                        )
+                except ValueError:
+                    console.print(
+                        f"  [{Theme.ERROR}]Invalid ID. Use /forget <number> or /forget all[/{Theme.ERROR}]\n"
+                    )
+
+    elif cmd == "/pr":
+        try:
+            # Check for gh CLI
+            gh_check = subprocess.run(["gh", "--version"], capture_output=True, text=True)
+            if gh_check.returncode != 0:
+                raise FileNotFoundError
+
+            # Get the diff for PR description
+            subprocess.run(
+                ["git", "diff", "--stat", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            subprocess.run(
+                ["git", "log", "--oneline", "origin/HEAD..HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            pr_title = arg if arg else None
+            console.print(f"  [{Theme.MUTED}]Creating pull request...[/{Theme.MUTED}]")
+
+            cmd_parts = ["gh", "pr", "create", "--fill"]
+            if pr_title:
+                cmd_parts = ["gh", "pr", "create", "--title", pr_title, "--fill"]
+
+            result = subprocess.run(cmd_parts, capture_output=True, text=True, timeout=30)
+            if result.returncode == 0:
+                console.print(
+                    f"  [{Theme.SUCCESS}]✓ PR created: {result.stdout.strip()}[/{Theme.SUCCESS}]\n"
+                )
+            else:
+                console.print(
+                    f"  [{Theme.ERROR}]PR creation failed: {result.stderr.strip()}[/{Theme.ERROR}]\n"
+                )
+
+        except FileNotFoundError:
+            console.print(
+                f"  [{Theme.ERROR}]GitHub CLI (gh) not found. Install with: brew install gh[/{Theme.ERROR}]\n"
+            )
+        except Exception as e:
+            console.print(f"  [{Theme.ERROR}]Error creating PR: {e}[/{Theme.ERROR}]\n")
+
+    elif cmd == "/branch":
+        if not arg:
+            # Show current branch
+            try:
+                result = subprocess.run(
+                    ["git", "branch", "--show-current"], capture_output=True, text=True, timeout=5
+                )
+                branches = subprocess.run(
+                    ["git", "branch", "-a"], capture_output=True, text=True, timeout=5
+                )
+                console.print(
+                    f"  [{Theme.TEXT}]Current branch:[/{Theme.TEXT}] [{Theme.ACCENT}]{result.stdout.strip()}[/{Theme.ACCENT}]"
+                )
+                if branches.stdout.strip():
+                    console.print(f"  [{Theme.MUTED}]{branches.stdout.strip()}[/{Theme.MUTED}]\n")
+            except Exception as e:
+                console.print(f"  [{Theme.ERROR}]Error: {e}[/{Theme.ERROR}]\n")
+        else:
+            try:
+                result = subprocess.run(
+                    ["git", "checkout", "-b", arg], capture_output=True, text=True, timeout=10
+                )
+                if result.returncode == 0:
+                    console.print(
+                        f"  [{Theme.SUCCESS}]✓ Created and switched to branch: {arg}[/{Theme.SUCCESS}]\n"
+                    )
+                else:
+                    console.print(f"  [{Theme.ERROR}]{result.stderr.strip()}[/{Theme.ERROR}]\n")
+            except Exception as e:
+                console.print(f"  [{Theme.ERROR}]Error: {e}[/{Theme.ERROR}]\n")
+
+    elif cmd == "/stash":
+        try:
+            stash_msg = arg if arg else "Stashed by Aizen"
+            result = subprocess.run(
+                ["git", "stash", "push", "-m", stash_msg],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                console.print(
+                    f"  [{Theme.SUCCESS}]✓ Changes stashed: {stash_msg}[/{Theme.SUCCESS}]\n"
+                )
+            else:
+                console.print(f"  [{Theme.ERROR}]{result.stderr.strip()}[/{Theme.ERROR}]\n")
+        except Exception as e:
+            console.print(f"  [{Theme.ERROR}]Error stashing: {e}[/{Theme.ERROR}]\n")
+
+    elif cmd == "/amend":
+        try:
+            # Get the current diff to generate a new commit message
+            subprocess.run(
+                ["git", "diff", "--cached", "--stat"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            last_msg = subprocess.run(
+                ["git", "log", "-1", "--pretty=%B"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            console.print(f"  [{Theme.MUTED}]Amending last commit...[/{Theme.MUTED}]")
+            console.print(
+                f"  [{Theme.MUTED}]Previous message: {last_msg.stdout.strip()}[/{Theme.MUTED}]"
+            )
+
+            new_msg = arg if arg else last_msg.stdout.strip()
+            result = subprocess.run(
+                ["git", "commit", "--amend", "-m", new_msg],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode == 0:
+                console.print(f"  [{Theme.SUCCESS}]✓ Commit amended: {new_msg}[/{Theme.SUCCESS}]\n")
+            else:
+                console.print(f"  [{Theme.ERROR}]{result.stderr.strip()}[/{Theme.ERROR}]\n")
+        except Exception as e:
+            console.print(f"  [{Theme.ERROR}]Error amending: {e}[/{Theme.ERROR}]\n")
+
+    elif cmd == "/log":
+        try:
+            count = int(arg) if arg and arg.isdigit() else 10
+            result = subprocess.run(
+                ["git", "log", "--oneline", f"-{count}", "--decorate", "--graph"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                console.print(f"  [{Theme.ACCENT}]📜 Recent commits:[/{Theme.ACCENT}]")
+                for line in result.stdout.strip().splitlines():
+                    console.print(f"  [{Theme.TEXT}]{line}[/{Theme.TEXT}]")
+                console.print()
+            else:
+                console.print(f"  [{Theme.MUTED}]No commits found.[/{Theme.MUTED}]\n")
+        except Exception as e:
+            console.print(f"  [{Theme.ERROR}]Error: {e}[/{Theme.ERROR}]\n")
+
+    elif cmd == "/budget":
+        if arg:
+            try:
+                budget_val = float(arg)
+                if token_tracker is not None:
+                    token_tracker.budget_limit = budget_val
+                    console.print(
+                        f"  [{Theme.SUCCESS}]✓ Budget set to ${budget_val:.2f}[/{Theme.SUCCESS}]\n"
+                    )
+                else:
+                    console.print(
+                        f"  [{Theme.ERROR}]Failed to set budget. Tracker not initialized.[/{Theme.ERROR}]\n"
+                    )
+            except ValueError:
+                console.print(
+                    f"  [{Theme.ERROR}]Invalid budget value. Use a number like: /budget 0.50[/{Theme.ERROR}]\n"
+                )
+        else:
+            if token_tracker and token_tracker.budget_limit is not None:
+                remaining = token_tracker.budget_limit - token_tracker.get_estimated_cost(
+                    get_active_model()
+                )
+                console.print(f"  [{Theme.TEXT}]💰 Budget: ${token_tracker.budget_limit:.2f}")
+                console.print(
+                    f"  [{Theme.TEXT}]   Spent: ${token_tracker.get_estimated_cost(get_active_model()):.4f}"
+                )
+                console.print(f"  [{Theme.TEXT}]   Remaining: ${remaining:.4f}\n")
+            else:
+                console.print(
+                    f"  [{Theme.MUTED}]No budget set. Use /budget <amount> or --budget flag.[/{Theme.MUTED}]\n"
+                )
+
+    elif cmd == "/stats":
+        from .analytics import format_stats_display, get_analytics
+
+        analytics = get_analytics()
+        stats = analytics.get_summary()
+        display = format_stats_display(stats)
+        console.print(display)
+        console.print()
 
     else:
         console.print(

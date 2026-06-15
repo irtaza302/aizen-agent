@@ -15,6 +15,7 @@ from .logging_config import logger
 
 _tiktoken_encoding = None
 
+
 def _get_tiktoken_encoding():
     """Lazily load tiktoken for accurate token counting. Falls back to estimation."""
     global _tiktoken_encoding
@@ -23,6 +24,7 @@ def _get_tiktoken_encoding():
 
     try:
         import tiktoken  # pyrefly: ignore[missing-import]
+
         # cl100k_base covers GPT-4, Claude, and most modern models
         _tiktoken_encoding = tiktoken.get_encoding("cl100k_base")
     except ImportError:
@@ -32,6 +34,7 @@ def _get_tiktoken_encoding():
 
 class Struct:
     """Simple namespace for converting dicts to attribute-access objects."""
+
     def __init__(self, **entries):
         self.__dict__.update(entries)
 
@@ -47,6 +50,7 @@ class TokenTracker:
         self.message_count: int = 0
         self.start_time: datetime = datetime.now()
         self._using_api_usage: bool = False
+        self.budget_limit: float | None = None  # Max cost in USD
 
     def add_usage(self, input_tokens: int, output_tokens: int):
         """Add estimated token usage for a single exchange."""
@@ -116,7 +120,9 @@ class TokenTracker:
     def get_summary_table(self, active_model: str = "") -> Table:
         source = "API-reported" if self._using_api_usage else "Estimated"
         enc = _get_tiktoken_encoding()
-        method = "tiktoken" if (enc and enc is not False and not self._using_api_usage) else "heuristic"
+        method = (
+            "tiktoken" if (enc and enc is not False and not self._using_api_usage) else "heuristic"
+        )
 
         table = Table(
             title="📊 Session Usage",
@@ -141,6 +147,7 @@ class TokenTracker:
         table.add_row("Counting Method", f"{source} ({method})")
         table.add_row("Session Duration", self.session_duration)
         return table
+
 
 # Pricing per 1,000,000 tokens (input, output) in USD
 MODEL_PRICING = {
@@ -174,8 +181,26 @@ MODEL_PRICING = {
     "meta-llama/llama-3.3-70b-instruct": (0.10, 0.25),
 }
 
+
 def get_model_cost(model_name: str, input_tokens: int, output_tokens: int) -> float:
     """Calculate the estimated cost for a given model and token count."""
+    # First, try to get exact pricing from the OpenRouter cache
+    from .config import get_cached_models
+
+    for cached_model in get_cached_models():
+        if cached_model.get("id") == model_name:
+            pricing = cached_model.get("pricing", {})
+            try:
+                # OpenRouter returns pricing per 1 token as strings
+                in_price = float(pricing.get("prompt", 0))
+                out_price = float(pricing.get("completion", 0))
+                if in_price > 0 or out_price > 0:
+                    return (input_tokens * in_price) + (output_tokens * out_price)
+            except (ValueError, TypeError):
+                pass
+            break
+
+    # Fallback to hardcoded estimates
     for known_model, (in_price, out_price) in MODEL_PRICING.items():
         if known_model in model_name.lower():
             return (input_tokens * in_price / 1_000_000) + (output_tokens * out_price / 1_000_000)
@@ -241,15 +266,12 @@ def truncate_output(text: str, max_chars: int = 100000) -> str:
     if len(text) <= max_chars:
         return text
     half = max_chars // 2
-    return (
-        f"{text[:half]}\n\n"
-        f"[... TRUNCATED {len(text) - max_chars} chars ...]\n\n"
-        f"{text[-half:]}"
-    )
+    return f"{text[:half]}\n\n[... TRUNCATED {len(text) - max_chars} chars ...]\n\n{text[-half:]}"
 
 
 _gitignore_cache = None
 _gitignore_cache_time = 0
+
 
 def load_gitignore_patterns() -> list:
     global _gitignore_cache, _gitignore_cache_time
@@ -258,8 +280,15 @@ def load_gitignore_patterns() -> list:
         return _gitignore_cache
 
     patterns = [
-        ".git/", "node_modules/", "__pycache__/", "venv/", ".env",
-        "dist/", "build/", "*.egg-info/", ".DS_Store",
+        ".git/",
+        "node_modules/",
+        "__pycache__/",
+        "venv/",
+        ".env",
+        "dist/",
+        "build/",
+        "*.egg-info/",
+        ".DS_Store",
     ]
     if os.path.exists(".gitignore"):
         try:
@@ -293,24 +322,31 @@ def fetch_url_content(url: str, timeout: int = 10) -> str:
     """Fetch content from a URL and strip HTML tags if it's a webpage."""
     try:
         req = urllib.request.Request(
-            url,
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AizenAgent'}
+            url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AizenAgent"}
         )
         with urllib.request.urlopen(req, timeout=timeout) as response:
             content_type = response.headers.get_content_type()
-            charset = response.headers.get_content_charset() or 'utf-8'
-            raw_data = response.read().decode(charset, errors='replace')
+            charset = response.headers.get_content_charset() or "utf-8"
+            raw_data = response.read().decode(charset, errors="replace")
 
-            if 'html' in content_type:
+            if "html" in content_type:
                 # Basic HTML stripping
                 # Remove script and style elements
-                text = re.sub(r'<(script|style)[^>]*>.*?</\1>', '', raw_data, flags=re.IGNORECASE | re.DOTALL)
+                text = re.sub(
+                    r"<(script|style)[^>]*>.*?</\1>", "", raw_data, flags=re.IGNORECASE | re.DOTALL
+                )
                 # Remove HTML tags
-                text = re.sub(r'<[^>]+>', ' ', text)
+                text = re.sub(r"<[^>]+>", " ", text)
                 # Unescape common HTML entities
-                text = text.replace('&nbsp;', ' ').replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&').replace('&quot;', '"')
+                text = (
+                    text.replace("&nbsp;", " ")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&amp;", "&")
+                    .replace("&quot;", '"')
+                )
                 # Collapse whitespace
-                text = re.sub(r'\s+', ' ', text).strip()
+                text = re.sub(r"\s+", " ", text).strip()
                 return text
 
             return raw_data

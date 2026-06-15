@@ -13,6 +13,15 @@ import random
 import re
 from typing import Any
 
+from openai import (
+    APIConnectionError as OpenAIConnectionError,
+)
+from openai import (
+    APITimeoutError,
+)
+from openai import (
+    RateLimitError as OpenAIRateLimitError,
+)
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.spinner import Spinner
@@ -63,14 +72,16 @@ class AgentRunner:
                         f"({self.max_auto_iterations}). Exiting auto mode.[/{Theme.WARNING}]"
                     )
                     self.is_auto_mode = False
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            f"You have reached the maximum number of autonomous iterations "
-                            f"({self.max_auto_iterations}). Please provide a brief summary "
-                            f"of what you have accomplished and what remains."
-                        ),
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                f"You have reached the maximum number of autonomous iterations "
+                                f"({self.max_auto_iterations}). Please provide a brief summary "
+                                f"of what you have accomplished and what remains."
+                            ),
+                        }
+                    )
                     self.auto_iteration_count = 0
 
             # Stream the response
@@ -103,21 +114,32 @@ class AgentRunner:
             # Loop continues — model processes tool results
 
     async def _stream_response(
-        self, messages: list[dict]
+        self,
+        messages: list[dict],
+        model_override: str | None = None,
     ) -> tuple[str, list[dict], Any] | None:
         """
         Stream a response from the model.
 
         Returns (full_content, tool_calls_list, api_usage) or None on error.
+        Handles KeyboardInterrupt gracefully — returns partial content instead of crashing.
         """
         full_content = ""
         accumulated_tool_calls: dict[int, dict] = {}
         api_usage = None
+        cancelled = False
 
-        spinner_label = random.choice([
-            "Thinking...", "Analyzing...", "Reasoning...",
-            "Processing...", "Considering...", "Exploring...", "Synthesizing...",
-        ])
+        spinner_label = random.choice(
+            [
+                "Thinking...",
+                "Analyzing...",
+                "Reasoning...",
+                "Processing...",
+                "Considering...",
+                "Exploring...",
+                "Synthesizing...",
+            ]
+        )
 
         if self.is_auto_mode:
             spinner_text = Text(
@@ -129,13 +151,14 @@ class AgentRunner:
 
         spinner_display = Spinner("dots2", text=spinner_text, style=f"{Theme.PRIMARY} bold")
 
+        model = model_override or get_active_model()
+        max_retries = 3
+        backoff_base = 2.0
+
         try:
-            with Live(
-                spinner_display, console=console, refresh_per_second=8
-            ) as live:
+            with Live(spinner_display, console=console, refresh_per_second=8) as live:
                 from openai import AsyncStream
 
-                model = get_active_model()
                 api_params: dict[str, Any] = {
                     "model": model,
                     "messages": messages,
@@ -146,73 +169,132 @@ class AgentRunner:
                     api_params["tools"] = self.active_tools
                     api_params["tool_choice"] = "auto"
 
-                stream: AsyncStream = await self.client.chat.completions.create(**api_params)
+                # Retry logic for transient API errors
+                stream: AsyncStream | None = None
+                for attempt in range(max_retries + 1):
+                    try:
+                        stream = await self.client.chat.completions.create(**api_params)
+                        break
+                    except (OpenAIRateLimitError, APITimeoutError, OpenAIConnectionError) as e:
+                        if attempt < max_retries:
+                            delay = backoff_base**attempt * (1.0 + random.uniform(-0.25, 0.25))
+                            retry_text = Text()
+                            retry_text.append("  ⏳ ", style="yellow")
+                            retry_text.append(f"{type(e).__name__}. ", style="dim")
+                            retry_text.append(
+                                f"Retrying in {delay:.1f}s... ({attempt + 1}/{max_retries})",
+                                style="dim italic",
+                            )
+                            live.update(retry_text)
+                            await asyncio.sleep(delay)
+                        else:
+                            raise
 
-                async for chunk in stream:
-                    if hasattr(chunk, "usage") and chunk.usage:
-                        api_usage = chunk.usage
+                if stream is None:
+                    return None
 
-                    delta = chunk.choices[0].delta if chunk.choices else None
-                    if not delta:
-                        continue
+                try:
+                    async for chunk in stream:
+                        if hasattr(chunk, "usage") and chunk.usage:
+                            api_usage = chunk.usage
 
-                    if delta.content:
-                        full_content += delta.content
-                        if full_content.strip():
-                            try:
-                                # Strip reasoning/thought tags for cleaner UI display
-                                cleaned_content = re.sub(r'<think>.*?(?:</think>|$)', '', full_content, flags=re.DOTALL)
-                                cleaned_content = re.sub(r'<\|channel>thought.*?(?:<channel\|>|$)', '', cleaned_content, flags=re.DOTALL)
+                        delta = chunk.choices[0].delta if chunk.choices else None
+                        if not delta:
+                            continue
 
-                                display_content = f"**◆ AIZEN:** {cleaned_content.strip()}"
-                                rendered = Markdown(display_content)
-                                live.update(rendered)
-                            except Exception:
-                                display_text = Text.from_markup(
-                                    f"{Theme.BADGE} {full_content}"
+                        if delta.content:
+                            full_content += delta.content
+                            if full_content.strip():
+                                try:
+                                    # Strip reasoning/thought tags for cleaner UI display
+                                    cleaned_content = re.sub(
+                                        r"<think>.*?(?:</think>|$)",
+                                        "",
+                                        full_content,
+                                        flags=re.DOTALL,
+                                    )
+                                    cleaned_content = re.sub(
+                                        r"<\|channel>thought.*?(?:<channel\|>|$)",
+                                        "",
+                                        cleaned_content,
+                                        flags=re.DOTALL,
+                                    )
+
+                                    display_content = f"**◆ AIZEN:** {cleaned_content.strip()}"
+                                    rendered = Markdown(display_content)
+                                    live.update(rendered)
+                                except Exception:
+                                    display_text = Text.from_markup(f"{Theme.BADGE} {full_content}")
+                                    live.update(display_text)
+
+                        if delta.tool_calls:
+                            for tc in delta.tool_calls:
+                                idx = tc.index
+                                if idx not in accumulated_tool_calls:
+                                    accumulated_tool_calls[idx] = {
+                                        "id": "",
+                                        "name": "",
+                                        "arguments": "",
+                                        "type": "function",
+                                    }
+                                if tc.id:
+                                    accumulated_tool_calls[idx]["id"] = tc.id
+                                if tc.function:
+                                    if tc.function.name:
+                                        accumulated_tool_calls[idx]["name"] += tc.function.name
+                                    if tc.function.arguments:
+                                        accumulated_tool_calls[idx]["arguments"] += (
+                                            tc.function.arguments
+                                        )
+
+                            names = [
+                                v["name"] for v in accumulated_tool_calls.values() if v["name"]
+                            ]
+                            if names and not full_content.strip():
+                                tool_text = Text()
+                                tool_text.append("  ◆ ", style=f"bold {Theme.ACCENT}")
+                                tool_text.append("Invoking ", style=f"{Theme.TEXT}")
+                                tool_text.append(
+                                    f"{', '.join(names)}", style=f"bold {Theme.ACCENT}"
                                 )
-                                live.update(display_text)
+                                tool_text.append(" ...", style=f"{Theme.MUTED}")
+                                live.update(tool_text)
 
-                    if delta.tool_calls:
-                        for tc in delta.tool_calls:
-                            idx = tc.index
-                            if idx not in accumulated_tool_calls:
-                                accumulated_tool_calls[idx] = {
-                                    "id": "", "name": "", "arguments": "", "type": "function",
-                                }
-                            if tc.id:
-                                accumulated_tool_calls[idx]["id"] = tc.id
-                            if tc.function:
-                                if tc.function.name:
-                                    accumulated_tool_calls[idx]["name"] += tc.function.name
-                                if tc.function.arguments:
-                                    accumulated_tool_calls[idx]["arguments"] += tc.function.arguments
+                except KeyboardInterrupt:
+                    # Graceful cancellation — save partial content, return to prompt
+                    cancelled = True
+                    try:
+                        await stream.close()
+                    except Exception:
+                        pass
 
-                        names = [v["name"] for v in accumulated_tool_calls.values() if v["name"]]
-                        if names and not full_content.strip():
-                            tool_text = Text()
-                            tool_text.append("  ◆ ", style=f"bold {Theme.ACCENT}")
-                            tool_text.append("Invoking ", style=f"{Theme.TEXT}")
-                            tool_text.append(f"{', '.join(names)}", style=f"bold {Theme.ACCENT}")
-                            tool_text.append(" ...", style=f"{Theme.MUTED}")
-                            live.update(tool_text)
-
+        except KeyboardInterrupt:
+            cancelled = True
         except Exception:
             # Re-raise — let the caller (main_loop) handle specific exception types
             raise
+
+        if cancelled:
+            console.print(f"\n  [{Theme.WARNING}]⚡ Response cancelled.[/{Theme.WARNING}]")
+            if full_content.strip():
+                # Return partial content so it's saved in message history
+                return full_content + "\n\n[Response cancelled by user]", [], api_usage
+            return None
 
         # Build tool calls list
         tool_calls_list: list[dict[str, Any]] = []
         for idx in sorted(accumulated_tool_calls.keys()):
             tc = accumulated_tool_calls[idx]
-            tool_calls_list.append({
-                "id": tc["id"],
-                "type": "function",
-                "function": {
-                    "name": tc["name"],
-                    "arguments": tc["arguments"],
-                },
-            })
+            tool_calls_list.append(
+                {
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": tc["arguments"],
+                    },
+                }
+            )
 
         return full_content, tool_calls_list, api_usage
 

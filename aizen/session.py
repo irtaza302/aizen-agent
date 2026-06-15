@@ -38,7 +38,7 @@ def _migrate_legacy_sessions():
 
                     conn.execute(
                         "INSERT OR IGNORE INTO sessions (name, saved_at, message_count, messages, input_tokens, output_tokens) VALUES (?, ?, ?, ?, ?, ?)",
-                        (name, saved_at, len(msgs), json.dumps(msgs), 0, 0)
+                        (name, saved_at, len(msgs), json.dumps(msgs), 0, 0),
                     )
                 # Mark as migrated
                 os.rename(filepath, filepath + ".migrated")
@@ -76,7 +76,7 @@ def _get_db() -> sqlite3.Connection:
 
     _db_connection = sqlite3.connect(db_path)
     _db_path_cached = db_path
-    _db_connection.execute('''
+    _db_connection.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
             name TEXT PRIMARY KEY,
             saved_at TEXT,
@@ -85,7 +85,7 @@ def _get_db() -> sqlite3.Connection:
             input_tokens INTEGER,
             output_tokens INTEGER
         )
-    ''')
+    """)
     _db_connection.commit()
 
     # Run legacy migration lazily (only once)
@@ -94,6 +94,7 @@ def _get_db() -> sqlite3.Connection:
         _migration_done = True
 
     return _db_connection
+
 
 def save_session(
     messages: list, name: str | None = None, token_tracker: TokenTracker | None = None
@@ -111,7 +112,7 @@ def save_session(
     conn = _get_db()
     conn.execute(
         "REPLACE INTO sessions (name, saved_at, message_count, messages, input_tokens, output_tokens) VALUES (?, ?, ?, ?, ?, ?)",
-        (name, saved_at, len(messages), json.dumps(messages), input_toks, output_toks)
+        (name, saved_at, len(messages), json.dumps(messages), input_toks, output_toks),
     )
     conn.commit()
     return f"sqlite://{name}"
@@ -130,6 +131,7 @@ def load_session(name: str) -> list | None:
             return json.loads(row[0])
         except json.JSONDecodeError as e:
             from .exceptions import SessionCorruptedError
+
             raise SessionCorruptedError(f"Session '{name}' is corrupted: {e}")
     return None
 
@@ -142,9 +144,5 @@ def list_sessions() -> list:
     cur = conn.execute("SELECT name, saved_at, message_count FROM sessions ORDER BY saved_at DESC")
     sessions = []
     for row in cur.fetchall():
-        sessions.append({
-            "name": row[0],
-            "saved_at": row[1],
-            "messages": row[2]
-        })
+        sessions.append({"name": row[0], "saved_at": row[1], "messages": row[2]})
     return sessions

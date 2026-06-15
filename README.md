@@ -7,19 +7,26 @@ Aizen is a powerful, asynchronous AI assistant that integrates seamlessly into y
 ## 🌟 Key Benefits
 
 - **Effortless Integration** — Operates directly in your terminal, preserving shell state across commands.
-- **Intelligent Editing** — Perform precise, color‑coded file edits with `edit_file`.
-- **Background Execution** — Run long‑running tasks asynchronously and retrieve results later.
-- **Cost‑Aware Usage** — Real‑time cost estimation for all major LLMs.
-- **Persistent Sessions** — Save and restore conversations with checkpoints.
-- **Rich Visual Feedback** — Stream responses with live previews and animated thought indicators.
+- **One-Shot & Scripting** — Use the `-p` flag for fast CLI pipelines or install shell hooks with `--install-shell`.
+- **Intelligent Context** — Auto-detects project languages, frameworks, and Git state on startup.
+- **Persistent Memory** — AI that learns your preferences across sessions using local SQLite memory.
+- **Git & PR Workflow** — Built-in commands to branch, stash, amend, and create PRs with AI.
+- **Cost Guardrails** — Real‑time cost tracking, cross-session analytics (`/stats`), and strict budget caps (`--budget`).
+- **Rich Visual Feedback** — Stream responses with live previews, with graceful Ctrl+C cancellation.
 - **Semantic Codebase Search** — Fast local RAG (Retrieval-Augmented Generation) using the `/search` command.
-- **Extensible Architecture** — Custom plugins and project‑specific rules tailor Aizen to your workflow.
-- **Comprehensive Logging** — Rotating logs with optional verbose output for debugging.
+- **Extensible Architecture** — Custom plugins, MCP integration, and project‑specific rules tailor Aizen to your workflow.
 
 ## 🚀 Core Features
 
 ### Asynchronous Architecture
-- Fully asynchronous operations using `asyncio` and `AsyncOpenAI` for concurrent processing, parallel tool runs, and streaming.
+- Fully asynchronous operations using `asyncio` and `AsyncOpenAI` for concurrent processing, parallel tool runs, and streaming. Native retry logic ensures resilience against API blips.
+
+### One-Shot & Shell Integration
+- Run `aizen -p "fix this"` for a single non-interactive response, or pipe input via `cat log.txt | aizen -p "summarize"`. Run `aizen --install-shell` to get the handy `ai` command wrapper.
+
+### Smart Auto-Context & Memory
+- Aizen automatically parses `package.json`, `pyproject.toml`, etc. to understand your stack.
+- Uses `~/.aizen_memory.db` to remember architectural decisions and user preferences autonomously using the `remember_fact` tool.
 
 ### Stateful Terminal Session
 - Environment variables and directory changes persist across interactions.
@@ -33,24 +40,22 @@ Aizen is a powerful, asynchronous AI assistant that integrates seamlessly into y
 ### Vision Support
 - Native image handling and encoding for Vision APIs (e.g., GPT‑4o, Claude 3.5 Sonnet).
 
-### Local Codebase RAG
-- Intelligent semantic search across your entire codebase using local embeddings and SQLite vector caching, accessible via the `/search` command and available to the agent.
+## 🎛️ Workflow Commands
 
-### Real‑Time Command Streaming
-- Background command execution with async streaming of stdout/stderr; use `run_command --background`.
+- `/auto <task>` — Enter autonomous agentic mode for a complex task.
+- `/commit` — Auto-generate and commit changes.
+- `/pr [title]` — Create a GitHub PR with an AI-generated description.
+- `/branch`, `/stash`, `/amend`, `/log` — Full AI-assisted git workflow.
+- `/remember <fact>` — Store a fact in persistent memory.
+- `/memory` — View all stored memories.
+- `/forget <id>` — Remove a specific memory.
 
-## 🎛️ Workflow Tools
+## 💰 Cost Tracking & Analytics
 
-- **Background Tasks** — Run non‑blocking commands; monitor with `check_background_task`; cancel with `kill_background_task`.
-- **Session Persistence** — Powered by SQLite (`~/.aizen_sessions/aizen.db`), auto‑migrating older JSON sessions.
-- **Project‑Specific Rules** — Auto‑load `.aizen_rules` or `.cursorrules` for repo‑specific behavior.
-- **Smart Autocomplete** — TAB‑completion with `.gitignore` awareness and directory traversal.
-
-## 💰 Cost Tracking
-
-- Real‑time token counting for inputs and outputs.
-- Current cost estimate shown in the CLI status bar.
-- Supports Anthropic (Claude 3.5/3.7 Sonnet, Opus, Haiku), Google (Gemini 2.5 Pro/Flash), and OpenAI (GPT‑4o, o1, o3‑mini).
+- **Real-time Pricing**: Pulls live pricing from OpenRouter cache.
+- **Budgeting**: Enforce session limits with `--budget 0.50` or `/budget`.
+- **Analytics**: Cross-session usage tracked in SQLite. Run `/stats` for a beautiful summary and sparkline chart.
+- **Multi-Model Routing**: Override the global model inline by typing `@claude-3.5-sonnet <prompt>`. Supports Anthropic, Google, OpenAI, DeepSeek, and Meta models.
 
 ## 📌 Session Management & Search
 
@@ -58,6 +63,7 @@ Aizen is a powerful, asynchronous AI assistant that integrates seamlessly into y
 - `/reindex [dir]` — Manually trigger indexing for local semantic search.
 - `/checkpoint [name]` — Save conversation snapshots.
 - `/restore [name]` — Restore a previous checkpoint.
+- `/export` — Export conversation to Markdown.
 
 ## 📁 Structured Logging
 

@@ -97,11 +97,7 @@ def grep_search(query: str, path: str = ".", is_regex: bool = False) -> str:
         matches = []
 
         for root, dirs, files in os.walk(path):
-            dirs[:] = [
-                d
-                for d in dirs
-                if not should_ignore(os.path.join(root, d), ignore_patterns)
-            ]
+            dirs[:] = [d for d in dirs if not should_ignore(os.path.join(root, d), ignore_patterns)]
 
             for file in files:
                 file_path = os.path.join(root, file)
@@ -119,14 +115,9 @@ def grep_search(query: str, path: str = ".", is_regex: bool = False) -> str:
                                 matched = query.lower() in line.lower()
 
                             if matched:
-                                matches.append(
-                                    f"{file_path}:{line_num}: {line.strip()}"
-                                )
+                                matches.append(f"{file_path}:{line_num}: {line.strip()}")
                                 if len(matches) >= 50:
-                                    return (
-                                        "\n".join(matches)
-                                        + "\n\n(Showing first 50 results)"
-                                    )
+                                    return "\n".join(matches) + "\n\n(Showing first 50 results)"
                 except (UnicodeDecodeError, PermissionError, OSError) as e:
                     logger.debug("grep_search skipped %s: %s", file_path, e)
 
@@ -148,23 +139,15 @@ def find_files(pattern: str, path: str = ".") -> str:
         matches = []
 
         for root, dirs, files in os.walk(path):
-            dirs[:] = [
-                d
-                for d in dirs
-                if not should_ignore(os.path.join(root, d), ignore_patterns)
-            ]
+            dirs[:] = [d for d in dirs if not should_ignore(os.path.join(root, d), ignore_patterns)]
 
             for file in files:
-                if fnmatch.fnmatch(file, pattern) or fnmatch.fnmatch(
-                    file.lower(), pattern.lower()
-                ):
+                if fnmatch.fnmatch(file, pattern) or fnmatch.fnmatch(file.lower(), pattern.lower()):
                     file_path = os.path.join(root, file)
                     if not should_ignore(file_path, ignore_patterns):
                         matches.append(file_path)
                         if len(matches) >= 100:
-                            return (
-                                "\n".join(matches) + "\n\n(Showing first 100 results)"
-                            )
+                            return "\n".join(matches) + "\n\n(Showing first 100 results)"
 
         if not matches:
             return f"No files matching '{pattern}' found."
@@ -178,17 +161,25 @@ def web_search_impl(query: str) -> str:
     try:
         req = urllib.request.Request(
             url,
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
         )
         with urllib.request.urlopen(req, timeout=10) as response:
-            html = response.read().decode('utf-8', errors='ignore')
+            html = response.read().decode("utf-8", errors="ignore")
 
         results = []
-        snippets = re.findall(r'<a class="result__snippet[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.IGNORECASE | re.DOTALL)
+        snippets = re.findall(
+            r'<a class="result__snippet[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
+            html,
+            re.IGNORECASE | re.DOTALL,
+        )
 
         for href, text in snippets[:5]:
-            clean_href = urllib.parse.unquote(href.replace('//duckduckgo.com/l/?uddg=', '').split('&')[0])
-            clean_text = re.sub(r'<[^>]+>', '', text).strip()
+            clean_href = urllib.parse.unquote(
+                href.replace("//duckduckgo.com/l/?uddg=", "").split("&")[0]
+            )
+            clean_text = re.sub(r"<[^>]+>", "", text).strip()
             results.append(f"URL: {clean_href}\nSnippet: {clean_text}\n")
 
         if not results:

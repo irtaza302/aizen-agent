@@ -26,6 +26,7 @@ background_tasks_lock = threading.Lock()  # Protects background_tasks dict
 
 class PersistentTerminal:
     """A stateful bash terminal session that persists across command executions."""
+
     def __init__(self):
         self.lock = threading.Lock()
         self.proc = None
@@ -41,15 +42,19 @@ class PersistentTerminal:
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
-            env=os.environ.copy()
+            env=os.environ.copy(),
         )
 
         def reader(pipe, buf):
-            for line in iter(pipe.readline, ''):
+            for line in iter(pipe.readline, ""):
                 buf.append(line)
 
-        threading.Thread(target=reader, args=(self.proc.stdout, self.stdout_buf), daemon=True).start()
-        threading.Thread(target=reader, args=(self.proc.stderr, self.stderr_buf), daemon=True).start()
+        threading.Thread(
+            target=reader, args=(self.proc.stdout, self.stdout_buf), daemon=True
+        ).start()
+        threading.Thread(
+            target=reader, args=(self.proc.stderr, self.stderr_buf), daemon=True
+        ).start()
 
     def run(self, command: str, timeout: int = 120) -> tuple[str, str, int, bool, str]:
         """Runs a command and returns (stdout, stderr, exit_code, timeout_occurred, new_pwd)."""
@@ -63,7 +68,7 @@ class PersistentTerminal:
             marker_str = f"{self.marker}_{uuid.uuid4().hex[:8]}"
 
             # The payload. We echo the exit code and the current working directory.
-            cmd_payload = f"{command}\n__aizen_exit=$?; echo \"{marker_str}:$__aizen_exit:$(pwd)\"\n"
+            cmd_payload = f'{command}\n__aizen_exit=$?; echo "{marker_str}:$__aizen_exit:$(pwd)"\n'
 
             try:
                 self.proc.stdin.write(cmd_payload)
@@ -153,7 +158,9 @@ def is_command_safe(command: str) -> bool:
     return False
 
 
-def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 120, background: bool = False) -> str:
+def run_command_impl(
+    command: str, auto_approve: bool = False, timeout: int = 120, background: bool = False
+) -> str:
     """Execute a shell command with safety checks. Uses PersistentTerminal unless background=True."""
     logger.debug("run_command: %s (timeout=%ds, background=%s)", command, timeout, background)
 
@@ -187,23 +194,29 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
                 "stdout": [],
                 "stderr": [],
                 "command": command,
-                "start_time": time.time()
+                "start_time": time.time(),
             }
             with background_tasks_lock:
                 background_tasks[task_id] = task_info
 
             def stream_reader(pipe, dest_list):
-                for line in iter(pipe.readline, ''):
+                for line in iter(pipe.readline, ""):
                     dest_list.append(line)
                 pipe.close()
 
-            threading.Thread(target=stream_reader, args=(proc.stdout, task_info["stdout"]), daemon=True).start()
-            threading.Thread(target=stream_reader, args=(proc.stderr, task_info["stderr"]), daemon=True).start()
+            threading.Thread(
+                target=stream_reader, args=(proc.stdout, task_info["stdout"]), daemon=True
+            ).start()
+            threading.Thread(
+                target=stream_reader, args=(proc.stderr, task_info["stderr"]), daemon=True
+            ).start()
 
             return f"Task started in background with ID: {task_id}"
 
         # Foreground interactive commands use the stateful terminal
-        output, stderr_output, exit_code, timeout_occurred, new_pwd = _terminal.run(command, timeout)
+        output, stderr_output, exit_code, timeout_occurred, new_pwd = _terminal.run(
+            command, timeout
+        )
 
         # Sync python's working directory with bash's working directory
         if new_pwd and os.path.exists(new_pwd) and new_pwd != os.getcwd():

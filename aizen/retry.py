@@ -18,13 +18,15 @@ from .config import console
 
 def _compute_delay(backoff_base: float, attempt: int, jitter: bool) -> float:
     """Calculate retry delay with optional jitter."""
-    delay = backoff_base ** attempt
+    delay = backoff_base**attempt
     if jitter:
         delay *= 1.0 + random.uniform(-0.25, 0.25)
     return delay
 
 
-def _print_retry_message(exception: BaseException, delay: float, attempt: int, max_retries: int) -> None:
+def _print_retry_message(
+    exception: BaseException, delay: float, attempt: int, max_retries: int
+) -> None:
     """Print a formatted retry notice to the console."""
     retry_msg = Text()
     retry_msg.append("  ⏳ ", style="yellow")
@@ -70,6 +72,7 @@ def retry_with_backoff(
         from openai import (
             RateLimitError as OpenAIRateLimitError,
         )
+
         retryable_exceptions = (
             OpenAIRateLimitError,
             APITimeoutError,
@@ -79,6 +82,7 @@ def retry_with_backoff(
     def decorator(func):
         # ── Async wrapper ──
         if inspect.iscoroutinefunction(func):
+
             @functools.wraps(func)
             async def async_wrapper(*args, **kwargs):
                 last_exception: BaseException = RuntimeError("Retry exhausted")

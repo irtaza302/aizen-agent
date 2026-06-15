@@ -47,31 +47,34 @@ def get_file_outline(filepath: str) -> str:
 
         outline = [f"File: {filepath}\n"]
 
-        if filepath.endswith('.py'):
+        if filepath.endswith(".py"):
             tree = ast.parse(content)
             for node in tree.body:
                 if isinstance(node, ast.ClassDef):
                     doc = ast.get_docstring(node)
-                    doc_str = f'    """{doc}"""\n' if doc else ''
+                    doc_str = f'    """{doc}"""\n' if doc else ""
                     outline.append(f"class {node.name}:\n{doc_str}")
                     for child in node.body:
                         if isinstance(child, ast.FunctionDef):
                             cdoc = ast.get_docstring(child)
-                            cdoc_str = f'        """{cdoc}"""\n' if cdoc else ''
+                            cdoc_str = f'        """{cdoc}"""\n' if cdoc else ""
                             outline.append(f"    def {child.name}(...):\n{cdoc_str}")
                 elif isinstance(node, ast.FunctionDef):
                     doc = ast.get_docstring(node)
-                    doc_str = f'    """{doc}"""\n' if doc else ''
+                    doc_str = f'    """{doc}"""\n' if doc else ""
                     outline.append(f"def {node.name}(...):\n{doc_str}")
-        elif filepath.endswith(('.js', '.ts', '.jsx', '.tsx')):
+        elif filepath.endswith((".js", ".ts", ".jsx", ".tsx")):
             lines = content.splitlines()
             for line in lines:
                 line_s = line.strip()
-                if re.match(r'^(export\s+)?(default\s+)?class\s+\w+', line_s):
+                if re.match(r"^(export\s+)?(default\s+)?class\s+\w+", line_s):
                     outline.append(line_s)
-                elif re.match(r'^(export\s+)?(default\s+)?(async\s+)?function\s+\w+', line_s):
+                elif re.match(r"^(export\s+)?(default\s+)?(async\s+)?function\s+\w+", line_s):
                     outline.append(line_s)
-                elif re.match(r'^(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s*)?(\([^)]*\)|[^=]+)\s*=>', line_s):
+                elif re.match(
+                    r"^(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s*)?(\([^)]*\)|[^=]+)\s*=>",
+                    line_s,
+                ):
                     outline.append(line_s)
         else:
             return f"Error: '{filepath}' language is not supported for outlining. Use read_file instead."
@@ -90,7 +93,9 @@ def read_file(filepath: str) -> str:
         if not os.path.exists(filepath):
             match = fuzzy_match_file(filepath)
             if match:
-                console.print(f"  [dim yellow]⚠️  File '{filepath}' not found, fuzzy matched to '{match}'[/dim yellow]")
+                console.print(
+                    f"  [dim yellow]⚠️  File '{filepath}' not found, fuzzy matched to '{match}'[/dim yellow]"
+                )
                 filepath = match
             else:
                 return f"Error: File '{filepath}' does not exist."
@@ -114,9 +119,7 @@ def read_file(filepath: str) -> str:
 
         if file_size > MAX_FILE_SIZE_WARNING:
             size_kb = file_size / 1024
-            console.print(
-                f"  [yellow]⚠️  Large file: {filepath} ({size_kb:.0f} KB)[/yellow]"
-            )
+            console.print(f"  [yellow]⚠️  Large file: {filepath} ({size_kb:.0f} KB)[/yellow]")
 
         with open(filepath, encoding="utf-8", errors="ignore") as f:
             content = f.read()
@@ -131,7 +134,13 @@ def read_file(filepath: str) -> str:
         return f"Error reading file: {e}"
 
 
-def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False, start_line: int | None = None, end_line: int | None = None) -> str:
+def write_file_with_diff(
+    filepath: str,
+    content: str,
+    auto_approve: bool = False,
+    start_line: int | None = None,
+    end_line: int | None = None,
+) -> str:
     """Write/overwrite a file with diff preview and optional auto-approval. Supports block rewriting."""
     logger.debug("write_file: %s (%d bytes)", filepath, len(content))
     try:
@@ -141,7 +150,9 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
         if not exists:
             match = fuzzy_match_file(filepath)
             if match:
-                console.print(f"  [dim yellow]⚠️  File '{filepath}' not found, fuzzy matched to '{match}'[/dim yellow]")
+                console.print(
+                    f"  [dim yellow]⚠️  File '{filepath}' not found, fuzzy matched to '{match}'[/dim yellow]"
+                )
                 filepath = match
                 exists = True
 
@@ -223,26 +234,48 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
         return f"Error writing file: {e}"
 
 
-def replace_file_content(filepath: str, target_content: str, replacement_content: str, start_line: int, end_line: int, allow_multiple: bool = False, auto_approve: bool = False) -> str:
+def replace_file_content(
+    filepath: str,
+    target_content: str,
+    replacement_content: str,
+    start_line: int,
+    end_line: int,
+    allow_multiple: bool = False,
+    auto_approve: bool = False,
+) -> str:
     """Edits a single contiguous block of an existing file."""
     return multi_replace_file_content(
         filepath,
-        [{"target_content": target_content, "replacement_content": replacement_content, "start_line": start_line, "end_line": end_line, "allow_multiple": allow_multiple}],
-        auto_approve
+        [
+            {
+                "target_content": target_content,
+                "replacement_content": replacement_content,
+                "start_line": start_line,
+                "end_line": end_line,
+                "allow_multiple": allow_multiple,
+            }
+        ],
+        auto_approve,
     )
 
 
-def multi_replace_file_content(filepath: str, replacement_chunks: list[dict], auto_approve: bool = False) -> str:
+def multi_replace_file_content(
+    filepath: str, replacement_chunks: list[dict], auto_approve: bool = False
+) -> str:
     """Edits multiple non-adjacent blocks of an existing file."""
     try:
         check_git_dirty(filepath)
         if not os.path.exists(filepath):
             match = fuzzy_match_file(filepath)
             if match:
-                console.print(f"  [dim yellow]⚠️  File '{filepath}' not found, fuzzy matched to '{match}'[/dim yellow]")
+                console.print(
+                    f"  [dim yellow]⚠️  File '{filepath}' not found, fuzzy matched to '{match}'[/dim yellow]"
+                )
                 filepath = match
             else:
-                return f"Error: File '{filepath}' does not exist. Use write_file to create new files."
+                return (
+                    f"Error: File '{filepath}' does not exist. Use write_file to create new files."
+                )
 
         with open(filepath, encoding="utf-8", errors="ignore") as f:
             file_content = f.read()
@@ -259,15 +292,17 @@ def multi_replace_file_content(filepath: str, replacement_chunks: list[dict], au
 
             actual_old = fuzzy_find_block(file_lines, target, sl, el)
             if not actual_old:
-                return f"Error in chunk {idx+1}: Could not find the specified target_content within lines {sl}-{el}. Please check your exact text."
+                return f"Error in chunk {idx + 1}: Could not find the specified target_content within lines {sl}-{el}. Please check your exact text."
 
             occurrence_count = new_file_content.count(actual_old)
             if occurrence_count == 0:
-                return f"Error in chunk {idx+1}: The text was found originally but is no longer present after preceding replacements."
+                return f"Error in chunk {idx + 1}: The text was found originally but is no longer present after preceding replacements."
             if occurrence_count > 1 and not allow_mult:
-                return f"Error in chunk {idx+1}: Found {occurrence_count} occurrences of the target text. Provide a more specific block or set allow_multiple=true."
+                return f"Error in chunk {idx + 1}: Found {occurrence_count} occurrences of the target text. Provide a more specific block or set allow_multiple=true."
 
-            new_file_content = new_file_content.replace(actual_old, replacement, -1 if allow_mult else 1)
+            new_file_content = new_file_content.replace(
+                actual_old, replacement, -1 if allow_mult else 1
+            )
             file_lines = new_file_content.splitlines(keepends=True)
 
         diff = list(

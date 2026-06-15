@@ -7,8 +7,10 @@ from .logging_config import logger
 
 PLUGINS_DIR = os.path.expanduser("~/.aizen/plugins")
 
+
 class PluginManager:
     """Manages loading and executing tools from user-provided Python scripts."""
+
     def __init__(self):
         self.plugins = {}
         self.tools = []
@@ -58,6 +60,7 @@ class PluginManager:
                 logger.error("Plugin tool error: %s", e)
                 return f"Error executing plugin tool {func_name}: {e}"
         return None
+
 
 # Global instance
 plugin_manager = PluginManager()

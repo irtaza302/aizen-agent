@@ -4,11 +4,13 @@ Also defines the tools schema list exposed to the OpenAI API.
 """
 
 import json
+import os
 
 from rich.text import Text
 
 from ..config import console
 from ..logging_config import logger
+from ..memory import REMEMBER_TOOL_SCHEMA, get_memory_store
 from ..plugins import plugin_manager
 from ..utils import truncate_output
 from .commands import (
@@ -106,9 +108,15 @@ tools = [
                     "allow_multiple": {
                         "type": "boolean",
                         "description": "If true, replaces all occurrences within the bounds.",
-                    }
+                    },
                 },
-                "required": ["filepath", "target_content", "replacement_content", "start_line", "end_line"],
+                "required": [
+                    "filepath",
+                    "target_content",
+                    "replacement_content",
+                    "start_line",
+                    "end_line",
+                ],
             },
         },
     },
@@ -130,15 +138,20 @@ tools = [
                         "items": {
                             "type": "object",
                             "properties": {
-                                "target_content": { "type": "string" },
-                                "replacement_content": { "type": "string" },
-                                "start_line": { "type": "integer" },
-                                "end_line": { "type": "integer" },
-                                "allow_multiple": { "type": "boolean" }
+                                "target_content": {"type": "string"},
+                                "replacement_content": {"type": "string"},
+                                "start_line": {"type": "integer"},
+                                "end_line": {"type": "integer"},
+                                "allow_multiple": {"type": "boolean"},
                             },
-                            "required": ["target_content", "replacement_content", "start_line", "end_line"]
-                        }
-                    }
+                            "required": [
+                                "target_content",
+                                "replacement_content",
+                                "start_line",
+                                "end_line",
+                            ],
+                        },
+                    },
                 },
                 "required": ["filepath", "replacement_chunks"],
             },
@@ -307,28 +320,27 @@ tools = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The semantic search query."
-                    },
+                    "query": {"type": "string", "description": "The semantic search query."},
                     "limit": {
                         "type": "integer",
                         "description": "Number of results to return.",
-                        "default": 5
+                        "default": 5,
                     },
                     "path": {
                         "type": "string",
-                        "description": "Restrict search to a specific directory or file path."
-                    }
+                        "description": "Restrict search to a specific directory or file path.",
+                    },
                 },
-                "required": ["query"]
-            }
-        }
+                "required": ["query"],
+            },
+        },
     },
+    REMEMBER_TOOL_SCHEMA,
 ]
 
 
 # ─── Tool Dispatcher ───────────────────────────────────────────────────────────
+
 
 def execute_tool(tool_call, auto_approve: bool = False) -> str:
     """
@@ -347,18 +359,14 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
     except json.JSONDecodeError:
         args = try_repair_json(raw_args)
         if args is None:
-            console.print(
-                f"  [yellow]⚠️  Malformed JSON from model for {func_name}[/yellow]"
-            )
+            console.print(f"  [yellow]⚠️  Malformed JSON from model for {func_name}[/yellow]")
             return (
                 f"Error: Invalid JSON in tool arguments for '{func_name}'. "
                 f"Please retry with valid JSON. The arguments received were: "
                 f"{raw_args[:200]}{'...' if len(raw_args) > 200 else ''}"
             )
         else:
-            console.print(
-                f"  [dim yellow]⚠️  Repaired malformed JSON for {func_name}[/dim yellow]"
-            )
+            console.print(f"  [dim yellow]⚠️  Repaired malformed JSON for {func_name}[/dim yellow]")
 
     tool_label = Text("  ⚙️  ", style="magenta")
     tool_label.append(func_name, style="dim magenta")
@@ -380,7 +388,9 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
             end_line = int(end_line)
         tool_label.append(f" → {filepath or '?'}", style="dim")
         console.print(tool_label)
-        return write_file_with_diff(filepath, content, auto_approve=auto_approve, start_line=start_line, end_line=end_line)
+        return write_file_with_diff(
+            filepath, content, auto_approve=auto_approve, start_line=start_line, end_line=end_line
+        )
 
     elif func_name == "replace_file_content":
         filepath = str(args.get("filepath", ""))
@@ -391,7 +401,9 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
         am = bool(args.get("allow_multiple", False))
         tool_label.append(f" → {filepath or '?'}", style="dim")
         console.print(tool_label)
-        return replace_file_content(filepath, target, replacement, sl, el, am, auto_approve=auto_approve)
+        return replace_file_content(
+            filepath, target, replacement, sl, el, am, auto_approve=auto_approve
+        )
 
     elif func_name == "multi_replace_file_content":
         filepath = str(args.get("filepath", ""))
@@ -406,7 +418,9 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
         background = bool(args.get("background", False))
         tool_label.append(f" → {command or '?'}", style="dim")
         console.print(tool_label)
-        return truncate_output(run_command_impl(command, auto_approve, timeout=timeout, background=background))
+        return truncate_output(
+            run_command_impl(command, auto_approve, timeout=timeout, background=background)
+        )
 
     elif func_name == "check_background_task":
         task_id = str(args.get("task_id", ""))
@@ -464,9 +478,25 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
             get_global_vector_store,
             semantic_search_tool,
         )
+
         store = get_global_vector_store()
         embedder = get_global_embedding_generator()
         return semantic_search_tool(store, embedder, query=query, limit=limit, path=path)
+
+    elif func_name == "remember_fact":
+        fact = str(args.get("fact", ""))
+        category = str(args.get("category", "general"))
+        tool_label.append(f" → {fact[:60]}{'...' if len(fact) > 60 else ''}", style="dim")
+        console.print(tool_label)
+        try:
+            memory_store = get_memory_store()
+            project_name = os.path.basename(os.getcwd())
+            memory_id = memory_store.remember(
+                fact, category=category, source="ai", project=project_name
+            )
+            return f"✓ Remembered (#{memory_id}): {fact}"
+        except Exception as e:
+            return f"Error storing memory: {e}"
 
     else:
         # Check if a plugin handles this tool

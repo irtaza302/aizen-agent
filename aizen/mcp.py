@@ -49,7 +49,9 @@ class MCPManager:
                     merged_env.update(env)
 
                 server_params = StdioServerParameters(command=command, args=args, env=merged_env)
-                stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+                stdio_transport = await self.exit_stack.enter_async_context(
+                    stdio_client(server_params)
+                )
                 read, write = stdio_transport
 
                 session = await self.exit_stack.enter_async_context(ClientSession(read, write))
@@ -60,20 +62,25 @@ class MCPManager:
                 # Fetch tools and format them for OpenAI
                 response = await session.list_tools()
                 for tool in response.tools:
-                    self.tools_cache.append({
-                        "type": "function",
-                        "function": {
-                            # Prefix with mcp_serverName_ to avoid collisions
-                            "name": f"mcp_{name}_{tool.name}",
-                            "description": tool.description or f"MCP tool {tool.name} from {name}",
-                            "parameters": tool.inputSchema,
+                    self.tools_cache.append(
+                        {
+                            "type": "function",
+                            "function": {
+                                # Prefix with mcp_serverName_ to avoid collisions
+                                "name": f"mcp_{name}_{tool.name}",
+                                "description": tool.description
+                                or f"MCP tool {tool.name} from {name}",
+                                "parameters": tool.inputSchema,
+                            },
                         }
-                    })
+                    )
                 logger.info("MCP server '%s' connected with %d tools", name, len(response.tools))
                 console.print(f"  [dim green]✓ Connected to MCP server: {name}[/dim green]")
             except Exception as e:
                 logger.exception("Failed to connect to MCP server '%s'", name)
-                console.print(f"  [dim yellow]⚠️  Failed to connect to MCP server {name}: {e}[/dim yellow]")
+                console.print(
+                    f"  [dim yellow]⚠️  Failed to connect to MCP server {name}: {e}[/dim yellow]"
+                )
 
     async def stop(self):
         if self.exit_stack:
@@ -88,7 +95,7 @@ class MCPManager:
         for server_name in self.sessions:
             prefix = f"mcp_{server_name}_"
             if full_tool_name.startswith(prefix):
-                tool_name = full_tool_name[len(prefix):]
+                tool_name = full_tool_name[len(prefix) :]
                 session = self.sessions[server_name]
                 try:
                     result = await session.call_tool(tool_name, arguments=arguments)

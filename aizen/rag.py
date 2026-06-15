@@ -24,14 +24,18 @@ from .utils import load_gitignore_patterns, should_ignore
 class EmbeddingError(Exception):
     pass
 
+
 class RateLimitError(EmbeddingError):
     pass
+
 
 class AuthenticationError(EmbeddingError):
     pass
 
+
 class TimeoutError(EmbeddingError):
     pass
+
 
 # --- Helper functions for config resolution ---
 def resolve_api_key(config: dict) -> str | None:
@@ -46,6 +50,7 @@ def resolve_api_key(config: dict) -> str | None:
         return key
     return None
 
+
 def resolve_api_base(config: dict) -> str:
     base = config.get("EMBEDDING_BASE_URL") or os.environ.get("EMBEDDING_BASE_URL")
     if not base:
@@ -54,16 +59,19 @@ def resolve_api_base(config: dict) -> str:
         base = "https://api.openai.com/v1"
     return base
 
+
 def resolve_model(config: dict) -> str:
     model = config.get("EMBEDDING_MODEL") or os.environ.get("EMBEDDING_MODEL")
     if not model:
         model = "text-embedding-3-small"
     return model
 
+
 # --- Embedding generation top-level functions ---
 def generate_embedding_sync(text: str) -> list[float]:
     generator = get_global_embedding_generator()
     return generator.generate([text])[0]
+
 
 async def generate_embedding_async(text: str) -> list[float]:
     config = load_config()
@@ -75,7 +83,10 @@ async def generate_embedding_async(text: str) -> list[float]:
     is_test = False
     if api_key:
         api_key_lower = api_key.lower()
-        if any(x in api_key_lower for x in ("valid", "rate-limiting", "timeout", "partial", "test", "mock", "sk-or-v1")):
+        if any(
+            x in api_key_lower
+            for x in ("valid", "rate-limiting", "timeout", "partial", "test", "mock", "sk-or-v1")
+        ):
             is_test = True
         if api_key == "invalid_key":
             is_test = True
@@ -92,10 +103,7 @@ async def generate_embedding_async(text: str) -> list[float]:
 
     try:
         client = AsyncOpenAI(api_key=api_key, base_url=api_base)
-        kwargs = {
-            "model": model,
-            "input": [text if text else " "]
-        }
+        kwargs = {"model": model, "input": [text if text else " "]}
         if "text-embedding-3" in model:
             kwargs["dimensions"] = 1536
 
@@ -109,6 +117,7 @@ async def generate_embedding_async(text: str) -> list[float]:
         raise TimeoutError(str(e))
     except Exception as e:
         raise EmbeddingError(str(e))
+
 
 class EmbeddingGenerator:
     def __init__(self, api_key=None, api_base=None, model=None, dimension=1536):
@@ -142,7 +151,7 @@ class EmbeddingGenerator:
                 dim = int.from_bytes(h, "big") % dimension
                 v[dim] += 1.0
 
-        mag = sum(x*x for x in v) ** 0.5
+        mag = sum(x * x for x in v) ** 0.5
         if mag > 0:
             v = [x / mag for x in v]
         else:
@@ -154,7 +163,18 @@ class EmbeddingGenerator:
         is_test = False
         if self.api_key:
             api_key_lower = self.api_key.lower()
-            if any(x in api_key_lower for x in ("valid", "rate-limiting", "timeout", "partial", "test", "mock", "sk-or-v1")):
+            if any(
+                x in api_key_lower
+                for x in (
+                    "valid",
+                    "rate-limiting",
+                    "timeout",
+                    "partial",
+                    "test",
+                    "mock",
+                    "sk-or-v1",
+                )
+            ):
                 is_test = True
             if self.api_key == "invalid_key":
                 is_test = True
@@ -193,10 +213,7 @@ class EmbeddingGenerator:
 
         try:
             client = OpenAI(api_key=self.api_key, base_url=self.api_base)
-            kwargs = {
-                "model": self.model,
-                "input": [t if t else " " for t in texts]
-            }
+            kwargs = {"model": self.model, "input": [t if t else " " for t in texts]}
             if "text-embedding-3" in self.model:
                 kwargs["dimensions"] = self.dimension
 
@@ -208,7 +225,7 @@ class EmbeddingGenerator:
                 v = results[i]
                 if len(v) != self.dimension:
                     if len(v) > self.dimension:
-                        v = v[:self.dimension]
+                        v = v[: self.dimension]
                     else:
                         v = v + [0.0] * (self.dimension - len(v))
                     results[i] = v
@@ -229,12 +246,13 @@ class EmbeddingGenerator:
             except RateLimitError:
                 if attempt == retries:
                     raise
-                time.sleep(delay * (2 ** attempt))
+                time.sleep(delay * (2**attempt))
         return []
+
 
 # --- Document Chunking ---
 class Chunker:
-    def __init__(self, chunk_size=1000, chunk_overlap=200, max_file_size=500*1024):
+    def __init__(self, chunk_size=1000, chunk_overlap=200, max_file_size=500 * 1024):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.max_file_size = max_file_size
@@ -260,26 +278,30 @@ class Chunker:
         for idx, line in enumerate(lines, 1):
             line_len = len(line) + 1
             if line_len > self.chunk_size and not current_lines:
-                chunks.append({
-                    "text": line[:self.chunk_size],
-                    "file_path": filepath,
-                    "start_line": idx,
-                    "end_line": idx,
-                    "char_count": len(line[:self.chunk_size]),
-                    "token_count": len(line[:self.chunk_size]) // 4
-                })
+                chunks.append(
+                    {
+                        "text": line[: self.chunk_size],
+                        "file_path": filepath,
+                        "start_line": idx,
+                        "end_line": idx,
+                        "char_count": len(line[: self.chunk_size]),
+                        "token_count": len(line[: self.chunk_size]) // 4,
+                    }
+                )
                 continue
 
             if current_len + line_len > self.chunk_size and current_lines:
                 chunk_text = "\n".join(current_lines)
-                chunks.append({
-                    "text": chunk_text,
-                    "file_path": filepath,
-                    "start_line": start_line,
-                    "end_line": idx - 1,
-                    "char_count": len(chunk_text),
-                    "token_count": len(chunk_text) // 4
-                })
+                chunks.append(
+                    {
+                        "text": chunk_text,
+                        "file_path": filepath,
+                        "start_line": start_line,
+                        "end_line": idx - 1,
+                        "char_count": len(chunk_text),
+                        "token_count": len(chunk_text) // 4,
+                    }
+                )
                 overlap_lines = []
                 overlap_len = 0
                 for ol in reversed(current_lines):
@@ -297,14 +319,16 @@ class Chunker:
 
         if current_lines:
             chunk_text = "\n".join(current_lines)
-            chunks.append({
-                "text": chunk_text,
-                "file_path": filepath,
-                "start_line": start_line,
-                "end_line": len(lines),
-                "char_count": len(chunk_text),
-                "token_count": len(chunk_text) // 4
-            })
+            chunks.append(
+                {
+                    "text": chunk_text,
+                    "file_path": filepath,
+                    "start_line": start_line,
+                    "end_line": len(lines),
+                    "char_count": len(chunk_text),
+                    "token_count": len(chunk_text) // 4,
+                }
+            )
         return chunks
 
     def chunk_file(self, file_path: str) -> list[dict]:
@@ -336,13 +360,17 @@ class Chunker:
 
         return self.chunk_text(content, file_path)
 
+
 # --- SQLite Vector Store Cache ---
 db_dir = os.path.expanduser("~/.aizen_vector_cache")
 os.makedirs(db_dir, exist_ok=True)
 default_db_path = os.path.join(db_dir, "vector_cache.db")
 
+
 class VectorStore:
-    def __init__(self, db_path: str = ":memory:", dimension: int = 1536, max_chunks_limit: int = 1000):
+    def __init__(
+        self, db_path: str = ":memory:", dimension: int = 1536, max_chunks_limit: int = 1000
+    ):
         self.db_path = db_path
         self.dimension = dimension
         self.max_chunks_limit = max_chunks_limit
@@ -402,7 +430,13 @@ class VectorStore:
             cursor.execute("DROP TABLE IF EXISTS vector_cache")
             self.init_db(conn)
 
-    def save_chunks(self, chunks: list[dict], embeddings: list[list[float]], file_hash: str = "", mtime: float = 0.0):
+    def save_chunks(
+        self,
+        chunks: list[dict],
+        embeddings: list[list[float]],
+        file_hash: str = "",
+        mtime: float = 0.0,
+    ):
         conn = self.conn
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM chunks")
@@ -419,40 +453,47 @@ class VectorStore:
             # Chunks table update/insert
             cursor.execute(
                 "SELECT id FROM chunks WHERE file_path=? AND start_line=? AND end_line=? AND text=?",
-                (chunk["file_path"], chunk["start_line"], chunk["end_line"], chunk["text"])
+                (chunk["file_path"], chunk["start_line"], chunk["end_line"], chunk["text"]),
             )
             existing = cursor.fetchone()
             if existing:
                 cursor.execute(
-                    "UPDATE chunks SET embedding=? WHERE id=?",
-                    (json.dumps(emb), existing[0])
+                    "UPDATE chunks SET embedding=? WHERE id=?", (json.dumps(emb), existing[0])
                 )
             else:
                 cursor.execute(
                     "INSERT INTO chunks (file_path, start_line, end_line, text, embedding) VALUES (?, ?, ?, ?, ?)",
-                    (chunk["file_path"], chunk["start_line"], chunk["end_line"], chunk["text"], json.dumps(emb))
+                    (
+                        chunk["file_path"],
+                        chunk["start_line"],
+                        chunk["end_line"],
+                        chunk["text"],
+                        json.dumps(emb),
+                    ),
                 )
 
             # Vector cache table update/insert
             emb_blob = struct.pack(f"{len(emb)}f", *emb)
             cursor.execute(
                 "SELECT id FROM vector_cache WHERE file_path=? AND chunk_index=?",
-                (chunk["file_path"], idx)
+                (chunk["file_path"], idx),
             )
             existing_cache = cursor.fetchone()
             if existing_cache:
                 cursor.execute(
                     "UPDATE vector_cache SET content=?, embedding=?, mtime=? WHERE id=?",
-                    (chunk["text"], emb_blob, mtime, existing_cache[0])
+                    (chunk["text"], emb_blob, mtime, existing_cache[0]),
                 )
             else:
                 cursor.execute(
                     "INSERT INTO vector_cache (file_path, chunk_index, content, embedding, mtime) VALUES (?, ?, ?, ?, ?)",
-                    (chunk["file_path"], idx, chunk["text"], emb_blob, mtime)
+                    (chunk["file_path"], idx, chunk["text"], emb_blob, mtime),
                 )
         conn.commit()
 
-    def search(self, query_vector: list[float], top_k: int = 5, path_filter: str = None) -> list[dict]:
+    def search(
+        self, query_vector: list[float], top_k: int = 5, path_filter: str = None
+    ) -> list[dict]:
         conn = self.conn
         cursor = conn.cursor()
         cursor.execute("SELECT file_path, start_line, end_line, text, embedding FROM chunks")
@@ -469,18 +510,20 @@ class VectorStore:
                     continue
 
             emb = json.loads(emb_str)
-            dot_prod = sum(a*b for a, b in zip(query_vector, emb))
-            mag_q = sum(a*a for a in query_vector) ** 0.5
-            mag_e = sum(b*b for b in emb) ** 0.5
+            dot_prod = sum(a * b for a, b in zip(query_vector, emb))
+            mag_q = sum(a * a for a in query_vector) ** 0.5
+            mag_e = sum(b * b for b in emb) ** 0.5
             sim = dot_prod / (mag_q * mag_e) if mag_q > 0 and mag_e > 0 else 0.0
 
-            results.append({
-                "file_path": file_path,
-                "start_line": start_line,
-                "end_line": end_line,
-                "text": text,
-                "score": sim
-            })
+            results.append(
+                {
+                    "file_path": file_path,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "text": text,
+                    "score": sim,
+                }
+            )
 
         results.sort(key=lambda x: x["score"], reverse=True)
         return results[:top_k]
@@ -530,7 +573,10 @@ class VectorStore:
             if file_path not in db_files or db_files[file_path] != file_hash:
                 cursor.execute("DELETE FROM chunks WHERE file_path=?", (file_path,))
                 cursor.execute("DELETE FROM vector_cache WHERE file_path=?", (file_path,))
-                cursor.execute("INSERT OR REPLACE INTO files (file_path, file_hash) VALUES (?, ?)", (file_path, file_hash))
+                cursor.execute(
+                    "INSERT OR REPLACE INTO files (file_path, file_hash) VALUES (?, ?)",
+                    (file_path, file_hash),
+                )
 
                 try:
                     text = content_bytes.decode("utf-8", errors="ignore")
@@ -544,6 +590,7 @@ class VectorStore:
                     self.save_chunks(chunks, embeddings, file_hash, mtime)
 
         conn.commit()
+
 
 # --- Slash Command Runner ---
 class SlashCommandRunner:
@@ -572,9 +619,9 @@ class SlashCommandRunner:
             if arg in ("--limit", "-n"):
                 if i + 1 < len(args_list):
                     try:
-                        limit = int(args_list[i+1])
+                        limit = int(args_list[i + 1])
                     except ValueError:
-                        console_obj.print(f"Error: Invalid limit value '{args_list[i+1]}'")
+                        console_obj.print(f"Error: Invalid limit value '{args_list[i + 1]}'")
                         return "Error"
                     i += 2
                 else:
@@ -614,14 +661,19 @@ class SlashCommandRunner:
 
         console_obj.print(f"[bold]Search Results for '{query}':[/bold]")
         for idx, res in enumerate(results, 1):
-            console_obj.print(f"{idx}. [green]{res['file_path']}[/green] (Lines {res['start_line']}-{res['end_line']}, Score: {res['score']:.4f})")
-            snippet_lines = res['text'].splitlines()[:3]
+            console_obj.print(
+                f"{idx}. [green]{res['file_path']}[/green] (Lines {res['start_line']}-{res['end_line']}, Score: {res['score']:.4f})"
+            )
+            snippet_lines = res["text"].splitlines()[:3]
             console_obj.print(f"   [dim]{chr(10).join(snippet_lines)}[/dim]")
 
         return "Success"
 
+
 # --- Tool helper ---
-def semantic_search_tool(vector_store, embedder, query: str, limit: int = 5, path: str = None) -> str:
+def semantic_search_tool(
+    vector_store, embedder, query: str, limit: int = 5, path: str = None
+) -> str:
     if not isinstance(query, str) or not query.strip():
         return json.dumps({"error": "Query parameter must be a non-empty string"})
     try:
@@ -650,12 +702,13 @@ def semantic_search_tool(vector_store, embedder, query: str, limit: int = 5, pat
                 "start_line": r["start_line"],
                 "end_line": r["end_line"],
                 "text": r["text"],
-                "score": r["score"]
+                "score": r["score"],
             }
             for r in results
         ]
     }
     return json.dumps(output, indent=2)
+
 
 semantic_search_tool_schema = {
     "type": "function",
@@ -665,29 +718,27 @@ semantic_search_tool_schema = {
         "parameters": {
             "type": "object",
             "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "The semantic search query."
-                },
+                "query": {"type": "string", "description": "The semantic search query."},
                 "limit": {
                     "type": "integer",
                     "description": "Number of results to return.",
-                    "default": 5
+                    "default": 5,
                 },
                 "path": {
                     "type": "string",
-                    "description": "Restrict search to a specific directory or file path."
-                }
+                    "description": "Restrict search to a specific directory or file path.",
+                },
             },
-            "required": ["query"]
-        }
-    }
+            "required": ["query"],
+        },
+    },
 }
 
 # --- Global / Singletons ---
 _global_vector_store = None
 _global_embedding_generator = None
 _store_lock = threading.Lock()
+
 
 def get_global_vector_store() -> VectorStore:
     global _global_vector_store
@@ -697,12 +748,14 @@ def get_global_vector_store() -> VectorStore:
             _global_vector_store.check_schema_migration()
         return _global_vector_store
 
+
 def get_global_embedding_generator() -> EmbeddingGenerator:
     global _global_embedding_generator
     with _store_lock:
         if _global_embedding_generator is None:
             _global_embedding_generator = EmbeddingGenerator()
         return _global_embedding_generator
+
 
 def reindex_directory(target_dir: str = "."):
     store = get_global_vector_store()

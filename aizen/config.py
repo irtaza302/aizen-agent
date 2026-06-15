@@ -30,21 +30,22 @@ SESSIONS_DIR = os.path.expanduser("~/.aizen_sessions")
 BACKUPS_DIR = os.path.expanduser("~/.aizen_backups")
 DEFAULT_MODEL = "openrouter/free"
 
+
 # ─── Theme Colors ───────────────────────────────────────────────────────────────
 # Centralized color palette — cyberpunk neon gradient
 class Theme:
-    PRIMARY = "#c084fc"       # Purple (main brand)
-    SECONDARY = "#818cf8"     # Indigo (accents)
-    ACCENT = "#22d3ee"        # Neon cyan (highlights)
-    PINK = "#f472b6"          # Hot pink (flair)
-    SUCCESS = "#4ade80"       # Vibrant green
-    WARNING = "#fbbf24"       # Amber
-    ERROR = "#f87171"         # Soft red
-    MUTED = "#6b7280"         # Slate gray (dim text)
-    TEXT = "#e2e8f0"          # Off-white (body text)
-    BORDER = "#818cf8"        # Indigo (borders/frames)
-    DIM_BORDER = "#4b5563"    # Dark gray (subtle borders)
-    SURFACE = "#1e1b2e"       # Dark purple-black (backgrounds)
+    PRIMARY = "#c084fc"  # Purple (main brand)
+    SECONDARY = "#818cf8"  # Indigo (accents)
+    ACCENT = "#22d3ee"  # Neon cyan (highlights)
+    PINK = "#f472b6"  # Hot pink (flair)
+    SUCCESS = "#4ade80"  # Vibrant green
+    WARNING = "#fbbf24"  # Amber
+    ERROR = "#f87171"  # Soft red
+    MUTED = "#6b7280"  # Slate gray (dim text)
+    TEXT = "#e2e8f0"  # Off-white (body text)
+    BORDER = "#818cf8"  # Indigo (borders/frames)
+    DIM_BORDER = "#4b5563"  # Dark gray (subtle borders)
+    SURFACE = "#1e1b2e"  # Dark purple-black (backgrounds)
 
     # Badge prefix for system messages
     SYS = f"[bold {PRIMARY}]◈ SYS[/bold {PRIMARY}]"
@@ -68,33 +69,75 @@ AIZEN_ASCII = """
 
 # Safe commands that auto-execute without confirmation
 SAFE_COMMAND_PREFIXES = [
-    "ls", "cat", "head", "tail", "wc", "file",
-    "git status", "git log", "git diff", "git branch", "git show", "git rev-parse",
-    "pwd", "echo", "which", "type", "tree", "du", "df",
-    "python --version", "python3 --version", "node --version",
-    "npm --version", "pip --version", "pip list", "pip show",
-    "cargo --version", "rustc --version", "go version",
-    "date", "whoami", "uname", "printenv",
+    "ls",
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "file",
+    "git status",
+    "git log",
+    "git diff",
+    "git branch",
+    "git show",
+    "git rev-parse",
+    "pwd",
+    "echo",
+    "which",
+    "type",
+    "tree",
+    "du",
+    "df",
+    "python --version",
+    "python3 --version",
+    "node --version",
+    "npm --version",
+    "pip --version",
+    "pip list",
+    "pip show",
+    "cargo --version",
+    "rustc --version",
+    "go version",
+    "date",
+    "whoami",
+    "uname",
+    "printenv",
 ]
 
 # Dangerous patterns that always require confirmation
 DANGEROUS_PATTERNS = [
-    r"\brm\s", r"\bsudo\b", r"\bchmod\b", r"\bchown\b", r"\bmkfs\b",
-    r"\bdd\b", r":\(\)\{", r"\bkill\b", r"\bpkill\b", r"\bshutdown\b",
-    r"\breboot\b", r">\s*/dev/", r"\bcurl\b.*\|\s*(ba)?sh",
-    r"\bmktemp\b.*>", r"\btruncate\b", r"\bmv\s+/(?!tmp)", r"chmod\s+777",
-    r"git\s+push\s+--force", r"\bdocker\s+run\b", r"\bpip\s+install\b", r"\bnpm\s+install\b",
+    r"\brm\s",
+    r"\bsudo\b",
+    r"\bchmod\b",
+    r"\bchown\b",
+    r"\bmkfs\b",
+    r"\bdd\b",
+    r":\(\)\{",
+    r"\bkill\b",
+    r"\bpkill\b",
+    r"\bshutdown\b",
+    r"\breboot\b",
+    r">\s*/dev/",
+    r"\bcurl\b.*\|\s*(ba)?sh",
+    r"\bmktemp\b.*>",
+    r"\btruncate\b",
+    r"\bmv\s+/(?!tmp)",
+    r"chmod\s+777",
+    r"git\s+push\s+--force",
+    r"\bdocker\s+run\b",
+    r"\bpip\s+install\b",
+    r"\bnpm\s+install\b",
     # Shell injection patterns
-    r"`[^`]+`",           # Backtick command substitution
-    r"\$\([^)]+\)",       # $() command substitution
-    r"\beval\b",          # eval execution
-    r"\bexec\b",          # exec execution
-    r"\bsource\b",        # source execution
-    r"\|\s*(ba)?sh\b",    # Pipe to shell
-    r"\|\s*zsh\b",        # Pipe to zsh
-    r"\|\s*python",       # Pipe to python
-    r"\bwget\b.*\|\s*",   # wget piped to anything
-    r"\bnohup\b",         # Background with nohup
+    r"`[^`]+`",  # Backtick command substitution
+    r"\$\([^)]+\)",  # $() command substitution
+    r"\beval\b",  # eval execution
+    r"\bexec\b",  # exec execution
+    r"\bsource\b",  # source execution
+    r"\|\s*(ba)?sh\b",  # Pipe to shell
+    r"\|\s*zsh\b",  # Pipe to zsh
+    r"\|\s*python",  # Pipe to python
+    r"\bwget\b.*\|\s*",  # wget piped to anything
+    r"\bnohup\b",  # Background with nohup
 ]
 
 SYSTEM_PROMPT = """\
@@ -139,6 +182,7 @@ def build_system_prompt(config: dict | None = None) -> str:
     1. Default SYSTEM_PROMPT
     2. User override from ~/.aizen_config.json ("system_prompt" key)
     3. Project-specific rules from .aizen_rules or .cursorrules in CWD
+    4. Auto-detected project context (language, framework, git state)
 
     This allows per-project customization without modifying source code.
     """
@@ -162,16 +206,31 @@ def build_system_prompt(config: dict | None = None) -> str:
                         f"The following rules are defined by the project maintainers "
                         f"(from {rules_file}):\n\n{project_rules}"
                     )
-                    console.print(f"{Theme.SYS} Project rules loaded from [#d3fbff]{rules_file}[/#d3fbff]")
+                    console.print(
+                        f"{Theme.SYS} Project rules loaded from [#d3fbff]{rules_file}[/#d3fbff]"
+                    )
                 break  # Only use the first rules file found
             except Exception as e:
                 logger.debug("Failed to load project rules from %s: %s", rules_file, e)
 
+    # Auto-detect project context
+    try:
+        from .project import ProjectDetector
+
+        detector = ProjectDetector()
+        project_context = detector.to_system_context()
+        if project_context:
+            parts.append(f"\n\n## Auto-Detected Project Context{project_context}")
+    except Exception as e:
+        logger.debug("Project detection failed: %s", e)
+
     return "\n".join(parts)
+
 
 # Global state for active model (protected by lock for thread safety)
 active_model = DEFAULT_MODEL
 _model_lock = threading.Lock()
+
 
 def set_active_model(model_name: str, save: bool = False):
     global active_model
@@ -186,9 +245,11 @@ def set_active_model(model_name: str, save: bool = False):
         except Exception as e:
             logger.error("Failed to save default model: %s", e)
 
+
 def get_active_model() -> str:
     with _model_lock:
         return active_model
+
 
 # ─── Configuration ──────────────────────────────────────────────────────────────
 
@@ -211,6 +272,7 @@ def migrate_legacy_data():
         except Exception as e:
             logger.debug(f"Failed to migrate sessions: {e}")
 
+
 def load_config() -> dict:
     migrate_legacy_data()
 
@@ -232,7 +294,9 @@ def load_config() -> dict:
                 # Merge local config keys (overriding global ones)
                 if isinstance(local_config, dict):
                     config.update(local_config)
-                    console.print(f"{Theme.SYS} Local config loaded from [#d3fbff]{local_config_path}[/#d3fbff]")
+                    console.print(
+                        f"{Theme.SYS} Local config loaded from [#d3fbff]{local_config_path}[/#d3fbff]"
+                    )
         except Exception as e:
             logger.debug("Failed to load local config file: %s", e)
 
@@ -246,7 +310,7 @@ def get_mcp_servers(config: dict) -> dict:
 
 def save_config(config: dict):
     try:
-        with open(CONFIG_PATH, 'w') as f:
+        with open(CONFIG_PATH, "w") as f:
             json.dump(config, f, indent=2)
     except Exception as e:
         console.print(f"[yellow]⚠️  Could not save config: {e}[/yellow]\n")
@@ -274,6 +338,7 @@ def get_api_key(config: dict, reset: bool = False) -> str:
     key = getpass.getpass("API Key: ").strip()
     if not key:
         from .exceptions import APIKeyError
+
         raise APIKeyError("API Key cannot be empty.")
 
     config["OPENROUTER_API_KEY"] = key
@@ -303,6 +368,7 @@ def _do_update_check(config: dict):
         ctx = ssl.create_default_context()
         try:
             import certifi
+
             ctx.load_verify_locations(cafile=certifi.where())
         except ImportError:
             ctx = ssl._create_unverified_context()
@@ -322,8 +388,8 @@ def _do_update_check(config: dict):
                 logger.debug("Failed to save config after update check: %s", e)
 
             try:
-                latest_parts = tuple(map(int, latest.split('.')))
-                current_parts = tuple(map(int, VERSION.split('.')))
+                latest_parts = tuple(map(int, latest.split(".")))
+                current_parts = tuple(map(int, VERSION.split(".")))
                 is_newer = latest_parts > current_parts
             except Exception:
                 is_newer = latest != VERSION
@@ -333,8 +399,7 @@ def _do_update_check(config: dict):
                     f"\n[bold magenta]🔔 Update available:[/bold magenta] v{VERSION} → v{latest}"
                 )
                 console.print("[dim]Run: pip install -U aizen-ai-cli (or brew upgrade aizen)[/dim]")
-                console.print("[dim]Then restart Aizen to use the new version![/dim]\n"
-                )
+                console.print("[dim]Then restart Aizen to use the new version![/dim]\n")
     except Exception as e:
         logger.debug("Update check failed (network/parsing): %s", e)
 
@@ -352,8 +417,8 @@ def check_for_updates(config: dict | None = None):
         cached = config.get("_latest_version")
         if cached and cached != VERSION:
             try:
-                cached_parts = tuple(map(int, cached.split('.')))
-                current_parts = tuple(map(int, VERSION.split('.')))
+                cached_parts = tuple(map(int, cached.split(".")))
+                current_parts = tuple(map(int, VERSION.split(".")))
                 is_newer = cached_parts > current_parts
             except Exception:
                 is_newer = cached != VERSION
@@ -363,17 +428,18 @@ def check_for_updates(config: dict | None = None):
                     f"\n[bold magenta]🔔 Update available:[/bold magenta] v{VERSION} → v{cached}"
                 )
                 console.print("[dim]Run: pip install -U aizen-ai-cli (or brew upgrade aizen)[/dim]")
-                console.print("[dim]Then restart Aizen to use the new version![/dim]\n"
-                )
+                console.print("[dim]Then restart Aizen to use the new version![/dim]\n")
         return
 
     thread = threading.Thread(target=_do_update_check, args=(config,), daemon=True)
     thread.start()
 
+
 # ─── OpenRouter Models Cache ────────────────────────────────────────────────────
 
 MODELS_CACHE_PATH = os.path.expanduser("~/.aizen_models.json")
 _MODELS_CACHE_TTL = 86400  # 24 hours
+
 
 def get_cached_models() -> list[dict]:
     if os.path.exists(MODELS_CACHE_PATH):
@@ -386,11 +452,13 @@ def get_cached_models() -> list[dict]:
             logger.debug("Failed to load models cache: %s", e)
     return []
 
+
 def _do_fetch_models():
     try:
         ctx = ssl.create_default_context()
         try:
             import certifi
+
             ctx.load_verify_locations(cafile=certifi.where())
         except ImportError:
             ctx = ssl._create_unverified_context()
@@ -401,17 +469,20 @@ def _do_fetch_models():
             models = data.get("data", [])
             simplified_models = []
             for m in models:
-                simplified_models.append({
-                    "id": m.get("id"),
-                    "name": m.get("name"),
-                    "context_length": m.get("context_length", "Unknown"),
-                    "pricing": m.get("pricing", {})
-                })
+                simplified_models.append(
+                    {
+                        "id": m.get("id"),
+                        "name": m.get("name"),
+                        "context_length": m.get("context_length", "Unknown"),
+                        "pricing": m.get("pricing", {}),
+                    }
+                )
 
             with open(MODELS_CACHE_PATH, "w", encoding="utf-8") as f:
                 json.dump({"timestamp": time.time(), "models": simplified_models}, f)
     except Exception as e:
         logger.debug("Failed to fetch OpenRouter models: %s", e)
+
 
 def fetch_openrouter_models_bg():
     """Fetches OpenRouter models in the background if the cache is stale."""
