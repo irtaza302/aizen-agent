@@ -105,6 +105,11 @@ class AgentRunner:
 
             # If no tool calls, we're done with this turn
             if not tool_calls_list:
+                if not full_content.strip():
+                    console.print(
+                        f"  [{Theme.WARNING}]⚠️ The model returned an empty response. "
+                        f"This can happen with free models or when the context is too large.[/{Theme.WARNING}]"
+                    )
                 break
 
             # Execute tool calls
