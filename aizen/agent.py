@@ -48,6 +48,7 @@ class AgentRunner:
         auto_iteration_count: int = 0,
         max_auto_iterations: int = 50,
     ):
+        self.tool_semaphore = asyncio.Semaphore(3)
         self.client = client
         self.active_tools = active_tools
         self.context_manager = context_manager
@@ -57,6 +58,12 @@ class AgentRunner:
         self.is_auto_mode = is_auto_mode
         self.auto_iteration_count = auto_iteration_count
         self.max_auto_iterations = max_auto_iterations
+
+        # Precompile regex for cleaning up thought tags
+        self._cleaning_pattern = re.compile(
+            r"<think>.*?(?:</think>|$)|<\|channel>thought.*?(?:<channel\|>|$)",
+            flags=re.DOTALL,
+        )
 
     async def run_turn(self, messages: list[dict], model_override: str | None = None) -> None:
         """
@@ -213,18 +220,7 @@ class AgentRunner:
                             if full_so_far.strip():
                                 try:
                                     # Strip reasoning/thought tags for cleaner UI display
-                                    cleaned_content = re.sub(
-                                        r"<think>.*?(?:</think>|$)",
-                                        "",
-                                        full_so_far,
-                                        flags=re.DOTALL,
-                                    )
-                                    cleaned_content = re.sub(
-                                        r"<\|channel>thought.*?(?:<channel\|>|$)",
-                                        "",
-                                        cleaned_content,
-                                        flags=re.DOTALL,
-                                    )
+                                    cleaned_content = self._cleaning_pattern.sub("", full_so_far)
 
                                     display_content = f"**◆ AIZEN:** {cleaned_content.strip()}"
                                     rendered = Markdown(display_content)
@@ -310,28 +306,37 @@ class AgentRunner:
         """Execute tool calls (in parallel where safe) and return tool result messages."""
 
         async def _exec_tool(tc_dict: dict) -> dict:
-            func_name = tc_dict["function"]["name"]
-            if func_name.startswith("mcp_") and self.mcp_manager:
+            async with self.tool_semaphore:
                 try:
-                    args = json.loads(tc_dict["function"]["arguments"])
-                    result = await self.mcp_manager.call_tool(func_name, args)
-                except json.JSONDecodeError:
-                    result = f"Error: Invalid JSON arguments for {func_name}."
-            else:
-                func_struct = Struct(**tc_dict["function"])
-                tc_struct = Struct(
-                    id=tc_dict["id"],
-                    type=tc_dict["type"],
-                    function=func_struct,
-                )
-                result = await asyncio.to_thread(execute_tool, tc_struct, self.auto_approve)
+                    func_name = tc_dict["function"]["name"]
+                    if func_name.startswith("mcp_") and self.mcp_manager:
+                        try:
+                            args = json.loads(tc_dict["function"]["arguments"])
+                            result = await asyncio.wait_for(self.mcp_manager.call_tool(func_name, args), timeout=60.0)
+                        except json.JSONDecodeError:
+                            result = f"Error: Invalid JSON arguments for {func_name}."
+                    else:
+                        func_struct = Struct(**tc_dict["function"])
+                        tc_struct = Struct(
+                            id=tc_dict["id"],
+                            type=tc_dict["type"],
+                            function=func_struct,
+                        )
+                        result = await asyncio.wait_for(asyncio.to_thread(execute_tool, tc_struct, self.auto_approve), timeout=120.0)
 
-            return {
-                "role": "tool",
-                "tool_call_id": tc_dict["id"],
-                "name": func_name,
-                "content": truncate_output(result),
-            }
+                    return {
+                        "role": "tool",
+                        "tool_call_id": tc_dict["id"],
+                        "name": func_name,
+                        "content": truncate_output(result),
+                    }
+                except asyncio.TimeoutError:
+                    return {
+                        "role": "tool",
+                        "tool_call_id": tc_dict["id"],
+                        "name": tc_dict["function"]["name"],
+                        "content": f"Error: Tool execution timed out.",
+                    }
 
         tool_results = await asyncio.gather(
             *[_exec_tool(tc) for tc in tool_calls_list],
