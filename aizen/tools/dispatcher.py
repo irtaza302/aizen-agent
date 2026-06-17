@@ -14,6 +14,13 @@ from ..logging_config import logger
 from ..memory import REMEMBER_TOOL_SCHEMA, get_memory_store
 from ..plugins import plugin_manager
 from ..utils import truncate_output
+from .browser import (
+    browser_click,
+    browser_evaluate,
+    browser_get_content,
+    browser_goto,
+    browser_screenshot,
+)
 from .commands import (
     check_background_task_impl,
     kill_background_task_impl,
@@ -27,15 +34,8 @@ from .file_ops import (
     replace_function,
     write_file_with_diff,
 )
-from .helpers import try_repair_json
+from .helpers import _ask_permission, try_repair_json
 from .search import find_files, grep_search, list_directory, web_search_impl
-from .browser import (
-    browser_goto,
-    browser_click,
-    browser_get_content,
-    browser_screenshot,
-    browser_evaluate,
-)
 
 # ─── Tools Schema (exposed to the AI model) ────────────────────────────────────
 
@@ -600,12 +600,12 @@ def _handle_replace_function(args: dict, auto_approve: bool) -> ToolResult:
     function_name = str(args.get("function_name", ""))
     new_content = str(args.get("new_content", ""))
     description = str(args.get("description", "AST Function Replacement"))
-    
+
     if not auto_approve:
         preview = f"Replace {function_name} in {filepath}"
         if not _ask_permission("replace_function", preview):
             return ("", "Operation cancelled by user.")
-            
+
     res = replace_function(filepath, function_name, new_content, description)
     return (f" → {filepath}", res)
 
@@ -671,14 +671,14 @@ def _handle_browser_evaluate(args: dict, auto_approve: bool) -> ToolResult:
 def _handle_delegate_task(args: dict, auto_approve: bool) -> ToolResult:
     import sys
     task_desc = str(args.get("task_description", ""))
-    
+
     # We construct a command that runs a completely isolated aizen loop in auto mode
     # --yolo ensures it doesn't block on terminal prompts.
     # We quote the task description carefully to avoid bash injection.
     import shlex
     escaped_task = shlex.quote(task_desc)
     cmd = f"{sys.executable} -m aizen.main --yolo -p {escaped_task}"
-    
+
     # We reuse the run_command_impl to get standard background execution tracking
     res = run_command_impl(cmd, background=True, auto_approve=True)
     return (" → sub-agent spawned", res)

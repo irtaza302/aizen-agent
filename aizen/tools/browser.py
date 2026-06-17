@@ -1,9 +1,7 @@
-import os
 import threading
-from typing import Optional
 
 try:
-    from playwright.sync_api import sync_playwright, Page, Browser, Playwright
+    from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 except ImportError:
     sync_playwright = None
     Page = None
@@ -13,13 +11,13 @@ except ImportError:
 class BrowserManager:
     _instance = None
     _lock = threading.Lock()
-    
+
     def __init__(self):
-        self.playwright: Optional[Playwright] = None
-        self.browser: Optional[Browser] = None
-        self.page: Optional[Page] = None
+        self.playwright: Playwright | None = None
+        self.browser: Browser | None = None
+        self.page: Page | None = None
         self.ctx_manager = None
-        
+
     @classmethod
     def get_instance(cls):
         with cls._lock:
@@ -30,7 +28,7 @@ class BrowserManager:
     def _ensure_browser(self):
         if not sync_playwright:
             raise ImportError("playwright is not installed. Run 'pip install playwright' and 'playwright install'")
-            
+
         if not self.playwright:
             self.ctx_manager = sync_playwright()
             self.playwright = self.ctx_manager.__enter__()

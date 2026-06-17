@@ -13,7 +13,7 @@ def tmp_dir():
     """Create a temporary directory for file operations."""
     d = tempfile.mkdtemp()
     resolved_d = os.path.realpath(d)
-    from aizen.tools.file_ops import set_workspace_root, _workspace_root
+    from aizen.tools.file_ops import _workspace_root, set_workspace_root
     original_root = _workspace_root
     set_workspace_root(resolved_d)
     yield resolved_d

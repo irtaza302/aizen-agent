@@ -2,10 +2,8 @@
 File operation tools: read, write, replace (single and multi-block), and file outline.
 """
 
-import ast
 import difflib
 import os
-import re
 import threading
 
 from rich.panel import Panel
@@ -80,7 +78,7 @@ def get_file_outline(filepath: str) -> str:
     """Extract outline using tree-sitter for multiple languages."""
     try:
         from .treesitter_utils import extract_outline
-        
+
         filepath = validate_file_path(filepath)
         if not os.path.exists(filepath):
             match = fuzzy_match_file(filepath)
@@ -91,11 +89,11 @@ def get_file_outline(filepath: str) -> str:
 
         with open(filepath, encoding="utf-8", errors="ignore") as f:
             content = f.read()
-            
+
         outline = extract_outline(filepath, content)
         if outline:
             return outline
-            
+
         # Fallback for unsupported languages (use the old regex method?)
         # Or just return an error so they use read_file
         return f"Error: '{filepath}' language is not supported for tree-sitter outlining. Use read_file instead."
@@ -106,9 +104,9 @@ def get_file_outline(filepath: str) -> str:
 def replace_function(filepath: str, function_name: str, new_content: str, description: str) -> str:
     """Replace an entire function/class by name using tree-sitter AST bounds."""
     try:
-        from .treesitter_utils import find_function_lines
         from .file_ops import replace_file_content
-        
+        from .treesitter_utils import find_function_lines
+
         filepath = validate_file_path(filepath)
         if not os.path.exists(filepath):
             match = fuzzy_match_file(filepath)
@@ -119,22 +117,22 @@ def replace_function(filepath: str, function_name: str, new_content: str, descri
 
         with open(filepath, encoding="utf-8", errors="ignore") as f:
             content = f.read()
-            
+
         bounds = find_function_lines(filepath, content, function_name)
         if not bounds:
             return f"Error: Could not find function/class '{function_name}' in '{filepath}'."
-            
+
         start_line, end_line = bounds
-        
+
         # We need to extract the exact target string to use the existing replace tool
         lines = content.splitlines(keepends=True)
         # Note: start_line and end_line are 1-indexed
         target_content = "".join(lines[start_line - 1:end_line])
-        
+
         # Add a newline if new_content lacks one but target has one
         if not new_content.endswith("\n") and target_content.endswith("\n"):
             new_content += "\n"
-            
+
         return replace_file_content(
             filepath=filepath,
             start_line=start_line,
