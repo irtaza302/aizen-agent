@@ -74,10 +74,17 @@ def inject_file_context(user_input: str) -> str:
 
             console.print(f"  [dim]⚡ Executing: {cmd}[/dim]")
             try:
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+                result = subprocess.run(
+                    cmd, shell=True, capture_output=True, text=True,
+                    timeout=30, cwd=os.getcwd()
+                )
                 output = result.stdout
                 if result.stderr:
                     output += "\n--- STDERR ---\n" + result.stderr
+                # Truncate output to prevent memory exhaustion
+                _MAX_CMD_OUTPUT = 50_000  # 50KB limit
+                if len(output) > _MAX_CMD_OUTPUT:
+                    output = output[:_MAX_CMD_OUTPUT] + "\n[Output truncated at 50KB]"
                 if not output.strip():
                     output = "[Command executed successfully with no output]"
                 context_blocks.append(
@@ -214,6 +221,39 @@ def parse_args():
         help="Set temperature (default: 0.7).",
     )
     return parser.parse_args()
+
+
+async def _cleanup(messages, token_tracker, mcp_manager):
+    """Shared exit cleanup: auto-save session, stop MCP, log analytics."""
+    if len(messages) > 2:
+        try:
+            save_session(messages, token_tracker=token_tracker)
+            console.print("[dim]Session auto-saved.[/dim]")
+        except Exception:
+            logger.exception("Failed to auto-save session on exit")
+    try:
+        await mcp_manager.stop()
+    except Exception:
+        logger.exception("Failed to stop MCP manager on exit")
+    try:
+        from .analytics import get_analytics
+
+        duration = (datetime.now() - token_tracker.start_time).total_seconds()
+        cost = token_tracker.get_estimated_cost(get_active_model())
+        project_name = os.path.basename(os.getcwd())
+        get_analytics().log_session(
+            model=get_active_model(),
+            input_tokens=token_tracker.total_input_tokens
+            + token_tracker.api_reported_input,
+            output_tokens=token_tracker.total_output_tokens
+            + token_tracker.api_reported_output,
+            estimated_cost=cost,
+            messages_count=token_tracker.message_count,
+            duration_seconds=duration,
+            project=project_name,
+        )
+    except Exception as e:
+        logger.debug("Failed to log analytics: %s", e)
 
 
 async def main_loop():
@@ -474,17 +514,7 @@ async def main_loop():
             user_input = "\n".join(lines)
 
             if user_input.lower().strip() in ("exit", "quit"):
-                # Auto-save on exit
-                if len(messages) > 2:
-                    try:
-                        save_session(messages, token_tracker=token_tracker)
-                        console.print("[dim]Session auto-saved.[/dim]")
-                    except Exception:
-                        logger.exception("Failed to auto-save session on exit")
-                try:
-                    await mcp_manager.stop()
-                except Exception:
-                    logger.exception("Failed to stop MCP manager on exit")
+                await _cleanup(messages, token_tracker, mcp_manager)
                 console.print(f"  [{Theme.PRIMARY}]Goodbye! 👋[/{Theme.PRIMARY}]")
                 break
 
@@ -632,38 +662,8 @@ async def main_loop():
                     )
 
         except (KeyboardInterrupt, EOFError):
-            # Auto-save on interrupt
-            if len(messages) > 2:
-                try:
-                    save_session(messages, token_tracker=token_tracker)
-                    console.print("\n[dim]Session auto-saved.[/dim]")
-                except Exception:
-                    logger.exception("Failed to auto-save session on interrupt")
-            try:
-                await mcp_manager.stop()
-            except Exception:
-                logger.exception("Failed to stop MCP manager on interrupt")
-            try:
-                # Log session analytics
-                from .analytics import get_analytics
-
-                duration = (datetime.now() - token_tracker.start_time).total_seconds()
-                cost = token_tracker.get_estimated_cost(get_active_model())
-                project_name = os.path.basename(os.getcwd())
-                get_analytics().log_session(
-                    model=get_active_model(),
-                    input_tokens=token_tracker.total_input_tokens
-                    + token_tracker.api_reported_input,
-                    output_tokens=token_tracker.total_output_tokens
-                    + token_tracker.api_reported_output,
-                    estimated_cost=cost,
-                    messages_count=token_tracker.message_count,
-                    duration_seconds=duration,
-                    project=project_name,
-                )
-            except Exception as e:
-                logger.debug("Failed to log analytics: %s", e)
-
+            console.print()  # Newline after ^C
+            await _cleanup(messages, token_tracker, mcp_manager)
             console.print(f"  [{Theme.PRIMARY}]Goodbye! 👋[/{Theme.PRIMARY}]")
             break
         except Exception as e:

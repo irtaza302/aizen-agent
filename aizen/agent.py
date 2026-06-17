@@ -58,7 +58,7 @@ class AgentRunner:
         self.auto_iteration_count = auto_iteration_count
         self.max_auto_iterations = max_auto_iterations
 
-    async def run_turn(self, messages: list[dict]) -> None:
+    async def run_turn(self, messages: list[dict], model_override: str | None = None) -> None:
         """
         Execute a full agent turn: stream the model's response, handle tool calls,
         and loop until the model produces a final text response (no more tool calls).
@@ -85,7 +85,7 @@ class AgentRunner:
                     self.auto_iteration_count = 0
 
             # Stream the response
-            stream_result = await self._stream_response(messages)
+            stream_result = await self._stream_response(messages, model_override=model_override)
             if stream_result is None:
                 break  # Error occurred (already printed to console)
 
@@ -124,7 +124,7 @@ class AgentRunner:
         Returns (full_content, tool_calls_list, api_usage) or None on error.
         Handles KeyboardInterrupt gracefully — returns partial content instead of crashing.
         """
-        full_content = ""
+        content_chunks: list[str] = []
         accumulated_tool_calls: dict[int, dict] = {}
         api_usage = None
         cancelled = False
@@ -203,14 +203,15 @@ class AgentRunner:
                             continue
 
                         if delta.content:
-                            full_content += delta.content
-                            if full_content.strip():
+                            content_chunks.append(delta.content)
+                            full_so_far = ''.join(content_chunks)
+                            if full_so_far.strip():
                                 try:
                                     # Strip reasoning/thought tags for cleaner UI display
                                     cleaned_content = re.sub(
                                         r"<think>.*?(?:</think>|$)",
                                         "",
-                                        full_content,
+                                        full_so_far,
                                         flags=re.DOTALL,
                                     )
                                     cleaned_content = re.sub(
@@ -224,7 +225,7 @@ class AgentRunner:
                                     rendered = Markdown(display_content)
                                     live.update(rendered)
                                 except Exception:
-                                    display_text = Text.from_markup(f"{Theme.BADGE} {full_content}")
+                                    display_text = Text.from_markup(f"{Theme.BADGE} {full_so_far}")
                                     live.update(display_text)
 
                         if delta.tool_calls:
@@ -250,7 +251,7 @@ class AgentRunner:
                             names = [
                                 v["name"] for v in accumulated_tool_calls.values() if v["name"]
                             ]
-                            if names and not full_content.strip():
+                            if names and not ''.join(content_chunks).strip():
                                 tool_text = Text()
                                 tool_text.append("  ◆ ", style=f"bold {Theme.ACCENT}")
                                 tool_text.append("Invoking ", style=f"{Theme.TEXT}")
@@ -273,6 +274,8 @@ class AgentRunner:
         except Exception:
             # Re-raise — let the caller (main_loop) handle specific exception types
             raise
+
+        full_content = ''.join(content_chunks)
 
         if cancelled:
             console.print(f"\n  [{Theme.WARNING}]⚡ Response cancelled.[/{Theme.WARNING}]")

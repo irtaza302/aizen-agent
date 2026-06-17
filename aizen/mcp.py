@@ -15,9 +15,6 @@ class MCPManager:
         self.config = mcp_servers_config
         self.sessions: dict[str, ClientSession] = {}
         self.exit_stack: contextlib.AsyncExitStack | None = None
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._thread: threading.Thread | None = None
-        self._ready_event = threading.Event()
         self.tools_cache: list[dict] = []
 
     async def start(self):

@@ -28,6 +28,50 @@ from .helpers import (
     validate_syntax,
 )
 
+# ── Path Traversal Protection ───────────────────────────────────────────────
+# Configurable workspace root — defaults to CWD
+_workspace_root: str = os.getcwd()
+
+
+def set_workspace_root(path: str) -> None:
+    """Set the allowed workspace root directory for file operations."""
+    global _workspace_root
+    _workspace_root = os.path.realpath(path)
+
+
+def validate_file_path(filepath: str) -> str:
+    """Resolve and validate a file path is within the workspace.
+
+    Raises FileOperationError if path traversal is detected.
+    Returns the resolved absolute path.
+    """
+    # Expand user home and resolve symlinks
+    resolved = os.path.realpath(os.path.expanduser(filepath))
+    workspace = os.path.realpath(_workspace_root)
+
+    # Also allow home directory config files that Aizen manages
+    aizen_dirs = [
+        os.path.realpath(os.path.expanduser("~/.aizen")),
+        os.path.realpath(os.path.expanduser("~/.aizen_backups")),
+    ]
+
+    # Check if path is within workspace or allowed dirs
+    allowed = any(
+        resolved.startswith(d + os.sep) or resolved == d
+        for d in [workspace] + aizen_dirs
+    )
+
+    if not allowed:
+        from ..exceptions import FileOperationError
+
+        raise FileOperationError(
+            f"Path traversal blocked: '{filepath}' resolves to '{resolved}' "
+            f"which is outside the workspace '{workspace}'"
+        )
+
+    return resolved
+
+
 # Global lock to prevent race conditions when multiple tools write to files concurrently
 file_write_lock = threading.Lock()
 
@@ -35,6 +79,7 @@ file_write_lock = threading.Lock()
 def get_file_outline(filepath: str) -> str:
     """Extract AST/regex outline of a Python or JS/TS file."""
     try:
+        filepath = validate_file_path(filepath)
         if not os.path.exists(filepath):
             match = fuzzy_match_file(filepath)
             if match:
@@ -90,6 +135,7 @@ def read_file(filepath: str) -> str:
     """Read file contents with safety checks for size and binary detection."""
     logger.debug("read_file: %s", filepath)
     try:
+        filepath = validate_file_path(filepath)
         if not os.path.exists(filepath):
             match = fuzzy_match_file(filepath)
             if match:
@@ -144,6 +190,7 @@ def write_file_with_diff(
     """Write/overwrite a file with diff preview and optional auto-approval. Supports block rewriting."""
     logger.debug("write_file: %s (%d bytes)", filepath, len(content))
     try:
+        filepath = validate_file_path(filepath)
         check_git_dirty(filepath)
         old_content = ""
         exists = os.path.exists(filepath)
@@ -244,6 +291,7 @@ def replace_file_content(
     auto_approve: bool = False,
 ) -> str:
     """Edits a single contiguous block of an existing file."""
+    filepath = validate_file_path(filepath)
     return multi_replace_file_content(
         filepath,
         [
@@ -264,6 +312,7 @@ def multi_replace_file_content(
 ) -> str:
     """Edits multiple non-adjacent blocks of an existing file."""
     try:
+        filepath = validate_file_path(filepath)
         check_git_dirty(filepath)
         if not os.path.exists(filepath):
             match = fuzzy_match_file(filepath)

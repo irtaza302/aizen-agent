@@ -339,6 +339,162 @@ tools = [
 ]
 
 
+# ─── Tool Handler Registry ──────────────────────────────────────────────────────
+
+from typing import Callable, Tuple
+
+# Each handler receives (args, auto_approve) and returns
+# (label_suffix, result) so the dispatcher can print the tool label
+# with the correct suffix before returning the result.
+ToolResult = Tuple[str, str]
+
+TOOL_HANDLERS: dict[str, Callable[..., ToolResult]] = {}
+
+
+def _register(name: str):
+    """Decorator to register a handler function in the TOOL_HANDLERS registry."""
+    def decorator(func: Callable[..., ToolResult]) -> Callable[..., ToolResult]:
+        TOOL_HANDLERS[name] = func
+        return func
+    return decorator
+
+
+# ─── Handler Functions ──────────────────────────────────────────────────────────
+
+
+@_register("read_file")
+def _handle_read_file(args: dict, auto_approve: bool) -> ToolResult:
+    filepath = str(args.get("filepath", ""))
+    return (f" → {filepath or '?'}", truncate_output(read_file(filepath)))
+
+
+@_register("write_file")
+def _handle_write_file(args: dict, auto_approve: bool) -> ToolResult:
+    filepath = str(args.get("filepath", ""))
+    content = str(args.get("content", ""))
+    start_line = args.get("start_line")
+    end_line = args.get("end_line")
+    if start_line is not None:
+        start_line = int(start_line)
+    if end_line is not None:
+        end_line = int(end_line)
+    result = write_file_with_diff(
+        filepath, content, auto_approve=auto_approve, start_line=start_line, end_line=end_line
+    )
+    return (f" → {filepath or '?'}", result)
+
+
+@_register("replace_file_content")
+def _handle_replace_file_content(args: dict, auto_approve: bool) -> ToolResult:
+    filepath = str(args.get("filepath", ""))
+    target = str(args.get("target_content", ""))
+    replacement = str(args.get("replacement_content", ""))
+    sl = int(args.get("start_line", 1))
+    el = int(args.get("end_line", 999999))
+    am = bool(args.get("allow_multiple", False))
+    result = replace_file_content(
+        filepath, target, replacement, sl, el, am, auto_approve=auto_approve
+    )
+    return (f" → {filepath or '?'}", result)
+
+
+@_register("multi_replace_file_content")
+def _handle_multi_replace_file_content(args: dict, auto_approve: bool) -> ToolResult:
+    filepath = str(args.get("filepath", ""))
+    chunks = args.get("replacement_chunks", [])
+    result = multi_replace_file_content(filepath, chunks, auto_approve=auto_approve)
+    return (f" → {filepath or '?'} ({len(chunks)} chunks)", result)
+
+
+@_register("run_terminal_command")
+def _handle_run_terminal_command(args: dict, auto_approve: bool) -> ToolResult:
+    command = str(args.get("command", ""))
+    timeout = int(args.get("timeout", 120))
+    background = bool(args.get("background", False))
+    result = truncate_output(
+        run_command_impl(command, auto_approve, timeout=timeout, background=background)
+    )
+    return (f" → {command or '?'}", result)
+
+
+@_register("check_background_task")
+def _handle_check_background_task(args: dict, auto_approve: bool) -> ToolResult:
+    task_id = str(args.get("task_id", ""))
+    return (f" → {task_id}", check_background_task_impl(task_id))
+
+
+@_register("kill_background_task")
+def _handle_kill_background_task(args: dict, auto_approve: bool) -> ToolResult:
+    task_id = str(args.get("task_id", ""))
+    return (f" → {task_id}", kill_background_task_impl(task_id))
+
+
+@_register("list_directory")
+def _handle_list_directory(args: dict, auto_approve: bool) -> ToolResult:
+    p = str(args.get("path", "."))
+    return (f" → {p}", truncate_output(list_directory(p)))
+
+
+@_register("grep_search")
+def _handle_grep_search(args: dict, auto_approve: bool) -> ToolResult:
+    query = str(args.get("query", ""))
+    path = str(args.get("path", "."))
+    is_regex = bool(args.get("is_regex", False))
+    return (f" → '{query or '?'}'", truncate_output(grep_search(query, path, is_regex)))
+
+
+@_register("web_search")
+def _handle_web_search(args: dict, auto_approve: bool) -> ToolResult:
+    query = str(args.get("query", ""))
+    return (f" → '{query or '?'}'", truncate_output(web_search_impl(query)))
+
+
+@_register("find_files")
+def _handle_find_files(args: dict, auto_approve: bool) -> ToolResult:
+    pattern = str(args.get("pattern", ""))
+    path = str(args.get("path", "."))
+    return (f" → {pattern or '?'}", truncate_output(find_files(pattern, path)))
+
+
+@_register("get_file_outline")
+def _handle_get_file_outline(args: dict, auto_approve: bool) -> ToolResult:
+    filepath = str(args.get("filepath", ""))
+    return (f" → {filepath or '?'}", truncate_output(get_file_outline(filepath)))
+
+
+@_register("semantic_search")
+def _handle_semantic_search(args: dict, auto_approve: bool) -> ToolResult:
+    query = str(args.get("query", ""))
+    limit = args.get("limit", 5)
+    path = args.get("path")
+    from ..rag import (
+        get_global_embedding_generator,
+        get_global_vector_store,
+        semantic_search_tool,
+    )
+
+    store = get_global_vector_store()
+    embedder = get_global_embedding_generator()
+    result = semantic_search_tool(store, embedder, query=query, limit=limit, path=path)
+    return (f" → '{query or '?'}' (limit={limit}, path={path})", result)
+
+
+@_register("remember_fact")
+def _handle_remember_fact(args: dict, auto_approve: bool) -> ToolResult:
+    fact = str(args.get("fact", ""))
+    category = str(args.get("category", "general"))
+    suffix = f" → {fact[:60]}{'...' if len(fact) > 60 else ''}"
+    try:
+        memory_store = get_memory_store()
+        project_name = os.path.basename(os.getcwd())
+        memory_id = memory_store.remember(
+            fact, category=category, source="ai", project=project_name
+        )
+        return (suffix, f"✓ Remembered (#{memory_id}): {fact}")
+    except Exception as e:
+        return (suffix, f"Error storing memory: {e}")
+
+
 # ─── Tool Dispatcher ───────────────────────────────────────────────────────────
 
 
@@ -371,138 +527,18 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
     tool_label = Text("  ⚙️  ", style="magenta")
     tool_label.append(func_name, style="dim magenta")
 
-    if func_name == "read_file":
-        filepath = str(args.get("filepath", ""))
-        tool_label.append(f" → {filepath or '?'}", style="dim")
+    # Look up handler in the registry
+    handler = TOOL_HANDLERS.get(func_name)
+    if handler is not None:
+        label_suffix, result = handler(args, auto_approve)
+        tool_label.append(label_suffix, style="dim")
         console.print(tool_label)
-        return truncate_output(read_file(filepath))
+        return result
 
-    elif func_name == "write_file":
-        filepath = str(args.get("filepath", ""))
-        content = str(args.get("content", ""))
-        start_line = args.get("start_line")
-        end_line = args.get("end_line")
-        if start_line is not None:
-            start_line = int(start_line)
-        if end_line is not None:
-            end_line = int(end_line)
-        tool_label.append(f" → {filepath or '?'}", style="dim")
-        console.print(tool_label)
-        return write_file_with_diff(
-            filepath, content, auto_approve=auto_approve, start_line=start_line, end_line=end_line
-        )
+    # Fall back to plugin system
+    plugin_result = plugin_manager.execute_tool(tool_call, auto_approve=auto_approve)
+    if plugin_result is not None:
+        return plugin_result
 
-    elif func_name == "replace_file_content":
-        filepath = str(args.get("filepath", ""))
-        target = str(args.get("target_content", ""))
-        replacement = str(args.get("replacement_content", ""))
-        sl = int(args.get("start_line", 1))
-        el = int(args.get("end_line", 999999))
-        am = bool(args.get("allow_multiple", False))
-        tool_label.append(f" → {filepath or '?'}", style="dim")
-        console.print(tool_label)
-        return replace_file_content(
-            filepath, target, replacement, sl, el, am, auto_approve=auto_approve
-        )
-
-    elif func_name == "multi_replace_file_content":
-        filepath = str(args.get("filepath", ""))
-        chunks = args.get("replacement_chunks", [])
-        tool_label.append(f" → {filepath or '?'} ({len(chunks)} chunks)", style="dim")
-        console.print(tool_label)
-        return multi_replace_file_content(filepath, chunks, auto_approve=auto_approve)
-
-    elif func_name == "run_terminal_command":
-        command = str(args.get("command", ""))
-        timeout = int(args.get("timeout", 120))
-        background = bool(args.get("background", False))
-        tool_label.append(f" → {command or '?'}", style="dim")
-        console.print(tool_label)
-        return truncate_output(
-            run_command_impl(command, auto_approve, timeout=timeout, background=background)
-        )
-
-    elif func_name == "check_background_task":
-        task_id = str(args.get("task_id", ""))
-        tool_label.append(f" → {task_id}", style="dim")
-        console.print(tool_label)
-        return check_background_task_impl(task_id)
-
-    elif func_name == "kill_background_task":
-        task_id = str(args.get("task_id", ""))
-        tool_label.append(f" → {task_id}", style="dim")
-        console.print(tool_label)
-        return kill_background_task_impl(task_id)
-
-    elif func_name == "list_directory":
-        p = str(args.get("path", "."))
-        tool_label.append(f" → {p}", style="dim")
-        console.print(tool_label)
-        return truncate_output(list_directory(p))
-
-    elif func_name == "grep_search":
-        query = str(args.get("query", ""))
-        path = str(args.get("path", "."))
-        is_regex = bool(args.get("is_regex", False))
-        tool_label.append(f" → '{query or '?'}'", style="dim")
-        console.print(tool_label)
-        return truncate_output(grep_search(query, path, is_regex))
-
-    elif func_name == "web_search":
-        query = str(args.get("query", ""))
-        tool_label.append(f" → '{query or '?'}'", style="dim")
-        console.print(tool_label)
-        return truncate_output(web_search_impl(query))
-
-    elif func_name == "find_files":
-        pattern = str(args.get("pattern", ""))
-        path = str(args.get("path", "."))
-        tool_label.append(f" → {pattern or '?'}", style="dim")
-        console.print(tool_label)
-        return truncate_output(find_files(pattern, path))
-
-    elif func_name == "get_file_outline":
-        filepath = str(args.get("filepath", ""))
-        tool_label.append(f" → {filepath or '?'}", style="dim")
-        console.print(tool_label)
-        return truncate_output(get_file_outline(filepath))
-
-    elif func_name == "semantic_search":
-        query = str(args.get("query", ""))
-        limit = args.get("limit", 5)
-        path = args.get("path")
-        tool_label.append(f" → '{query or '?'}' (limit={limit}, path={path})", style="dim")
-        console.print(tool_label)
-        from ..rag import (
-            get_global_embedding_generator,
-            get_global_vector_store,
-            semantic_search_tool,
-        )
-
-        store = get_global_vector_store()
-        embedder = get_global_embedding_generator()
-        return semantic_search_tool(store, embedder, query=query, limit=limit, path=path)
-
-    elif func_name == "remember_fact":
-        fact = str(args.get("fact", ""))
-        category = str(args.get("category", "general"))
-        tool_label.append(f" → {fact[:60]}{'...' if len(fact) > 60 else ''}", style="dim")
-        console.print(tool_label)
-        try:
-            memory_store = get_memory_store()
-            project_name = os.path.basename(os.getcwd())
-            memory_id = memory_store.remember(
-                fact, category=category, source="ai", project=project_name
-            )
-            return f"✓ Remembered (#{memory_id}): {fact}"
-        except Exception as e:
-            return f"Error storing memory: {e}"
-
-    else:
-        # Check if a plugin handles this tool
-        plugin_result = plugin_manager.execute_tool(tool_call, auto_approve=auto_approve)
-        if plugin_result is not None:
-            return plugin_result
-
-        console.print(tool_label)
-        return f"Unknown tool: {func_name}"
+    console.print(tool_label)
+    return f"Unknown tool: {func_name}"

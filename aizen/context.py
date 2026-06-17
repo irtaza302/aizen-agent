@@ -225,7 +225,7 @@ class ContextPruner:
         return dropped_count
 
     @staticmethod
-    def summarize_old_messages(messages: list[dict], recent_count: int = 4) -> list[dict]:
+    def summarize_old_messages(messages: list[dict], recent_count: int = 4) -> str:
         """
         Condenses older messages into a naive summary to save tokens.
         Modifies the `messages` list in place and returns the summary message text.
