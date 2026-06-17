@@ -40,7 +40,7 @@ from .config import (
     set_active_model,
 )
 from .context import ContextManager, ContextPruner
-from .exceptions import APIKeyError, SessionCorruptedError
+from .exceptions import APIKeyError, SecurityError, SessionCorruptedError, UsageError
 from .logging_config import logger, setup_logging
 from .mcp import MCPManager
 from .plugins import plugin_manager
@@ -49,7 +49,10 @@ from .tools import backup_manager, tools
 from .utils import TokenTracker, fetch_url_content, generate_directory_tree
 
 
-def inject_file_context(user_input: str) -> str:
+SAFE_COMMANDS = {"git", "cat", "ls", "grep", "find", "mkdir", "echo", "help"}
+
+
+def inject_file_context(user_input: str, auto_approve: bool = False) -> str:
     context_blocks = []
 
     # 1. Handle command injection (@cmd:"...")
@@ -58,19 +61,18 @@ def inject_file_context(user_input: str) -> str:
     for match in cmd_matches:
         cmd = match.group(1) or match.group(2) or match.group(3)
         if cmd:
+            parts = cmd.split()
             # Safety check: validate against dangerous patterns
-            is_dangerous = any(re.search(p, cmd) for p in DANGEROUS_PATTERNS)
+            is_dangerous = any(re.search(p, ' '.join(parts)) for p in DANGEROUS_PATTERNS)
             if is_dangerous:
-                console.print(
-                    f"  [bold yellow]⚠️  Dangerous command detected:[/bold yellow] [dim]{cmd}[/dim]"
+                raise SecurityError(f"💣 Dangerous command detected: {cmd}")
+
+            # Safe command whitelist
+            if parts[0] not in SAFE_COMMANDS and not auto_approve:
+                raise UsageError(
+                    f"✍️  Command not in safe list. Permitted commands: {list(SAFE_COMMANDS)}\n"
+                    f"Use --yolo flag to bypass."
                 )
-                try:
-                    confirm = input("  ▸ Allow this command? [y/N] ").strip().lower()
-                    if confirm not in ("y", "yes"):
-                        console.print(f"  [dim yellow]⚠️  Command denied: {cmd}[/dim yellow]")
-                        continue
-                except (EOFError, KeyboardInterrupt):
-                    continue
 
             console.print(f"  [dim]⚡ Executing: {cmd}[/dim]")
             try:
@@ -110,6 +112,11 @@ def inject_file_context(user_input: str) -> str:
             else:
                 context_blocks.append(f'<url_context url="{item}">\n{content}\n</url_context>')
         elif os.path.isfile(item):
+            # Path traversal sanitization
+            abs_item = os.path.abspath(item)
+            if os.path.commonpath([os.getcwd(), abs_item]) != os.getcwd():
+                raise SecurityError(f"Attempt to access files outside project root: {item}")
+
             ext = os.path.splitext(item)[1].lower()
             if ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"]:
                 try:
@@ -131,6 +138,11 @@ def inject_file_context(user_input: str) -> str:
                 except Exception as e:
                     console.print(f"  [dim yellow]⚠️  Failed to read {item}: {e}[/dim yellow]")
         elif os.path.isdir(item):
+            # Path traversal sanitization
+            abs_item = os.path.abspath(item)
+            if os.path.commonpath([os.getcwd(), abs_item]) != os.getcwd():
+                raise SecurityError(f"Attempt to access directory outside project root: {item}")
+
             try:
                 tree_output = generate_directory_tree(item)
                 context_blocks.append(
@@ -339,7 +351,11 @@ async def main_loop():
                 prompt_text += f"\n\n<piped_input>\n{piped_input}\n</piped_input>"
 
         # Process @file references in the prompt
-        prompt_text = inject_file_context(prompt_text)
+        try:
+            prompt_text = inject_file_context(prompt_text, auto_approve=auto_approve)
+        except (SecurityError, UsageError) as e:
+            console.print(f"\n[bold red]✖ {e.__class__.__name__}:[/bold red] {e}")
+            sys.exit(1)
 
         messages = [{"role": "system", "content": build_system_prompt(config)}]
         messages.append({"role": "user", "content": prompt_text})
@@ -564,7 +580,11 @@ async def main_loop():
                         user_input = user_input[len(f"@{m['id']}") :].strip()
                         break
 
-                user_input = inject_file_context(user_input)
+                try:
+                    user_input = inject_file_context(user_input, auto_approve=auto_approve)
+                except (SecurityError, UsageError) as e:
+                    console.print(f"\n  [bold red]✖ {e.__class__.__name__}:[/bold red] {e}")
+                    continue
 
                 if not user_input.strip():
                     continue

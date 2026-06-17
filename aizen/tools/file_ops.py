@@ -292,6 +292,20 @@ def write_file_with_diff(
         return f"✓ Successfully wrote to {filepath}"
     except Exception as e:
         return f"Error writing file: {e}"
+def generate_safe_editor_output(filepath: str, replacement: str) -> str:
+    """Create a marker-based output to guide users safely after an edit."""
+    short_repl = replacement[:50].replace("\n", "\\n") + ("..." if len(replacement) > 50 else "")
+    output = f"""
+    🎯 File modification: {filepath}
+
+    📍 Change method:
+    1. Safe replacement: {short_repl}
+    2. Use `/undo` to revert
+    3. Use `edit_file` for alternatives
+
+    ℹ️ Never edit directly in source control!
+    """
+    return output
 
 
 def replace_file_content(
@@ -400,6 +414,9 @@ def multi_replace_file_content(
         with file_write_lock:
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(new_file_content)
+
+        for chunk in replacement_chunks:
+            console.print(generate_safe_editor_output(filepath, chunk.get("replacement_content", "")))
 
         return f"✓ Successfully applied {len(replacement_chunks)} replacement(s) to {filepath}"
     except Exception as e:

@@ -52,3 +52,21 @@ class ContextWindowExceededError(AizenError):
     """Raised when the conversation exceeds the model's context window."""
 
     pass
+
+
+class UsageError(AizenError):
+    """Raised for command whitelist warnings or misuse."""
+
+    pass
+
+
+class SecurityError(AizenError):
+    """Raised for unsafe operations like path traversal or dangerous commands."""
+
+    pass
+
+
+class ToolError(AizenError):
+    """Raised for general tool execution errors."""
+
+    pass
