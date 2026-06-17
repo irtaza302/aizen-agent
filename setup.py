@@ -10,7 +10,7 @@ def parse_requirements(filename):
 
 setup(
     name="aizen-ai-cli",
-    version="2.6.1",
+    version="2.7.0",
     description="Aizen AI Agent — A professional-grade AI coding assistant for your terminal.",
     packages=["aizen"],
     install_requires=parse_requirements("requirements.txt"),

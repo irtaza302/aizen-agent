@@ -5,6 +5,13 @@ All notable changes to the Aizen AI CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-06-17
+
+### Added
+- **Universal AST Parsing**: Integrated `tree-sitter` for flawless codebase outlines and a new surgical `replace_function` tool across Python, JS, TS, JSX, and TSX.
+- **Headless Browser Automation**: Built-in Playwright tools (`browser_goto`, `browser_screenshot`, `browser_evaluate`, etc.) for visual QA and web scraping.
+- **Multi-Agent Orchestration**: Added `delegate_task` tool, allowing Aizen to act as a Manager Agent and spawn concurrent background sub-agents for complex tasks.
+
 ## [2.6.1] - 2026-06-17
 
 ### Fixed

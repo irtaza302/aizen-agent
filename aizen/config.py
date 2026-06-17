@@ -20,7 +20,7 @@ logger = logging.getLogger("aizen")
 
 # Read version from installed package metadata (stays in sync with pyproject.toml).
 # Falls back to a hardcoded value only when running from source without installing.
-_FALLBACK_VERSION = "2.6.1"
+_FALLBACK_VERSION = "2.7.0"
 try:
     VERSION = _pkg_version("aizen-ai-cli")
 except PackageNotFoundError:

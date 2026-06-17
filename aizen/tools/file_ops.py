@@ -77,8 +77,10 @@ file_write_lock = threading.Lock()
 
 
 def get_file_outline(filepath: str) -> str:
-    """Extract AST/regex outline of a Python or JS/TS file."""
+    """Extract outline using tree-sitter for multiple languages."""
     try:
+        from .treesitter_utils import extract_outline
+        
         filepath = validate_file_path(filepath)
         if not os.path.exists(filepath):
             match = fuzzy_match_file(filepath)
@@ -89,46 +91,59 @@ def get_file_outline(filepath: str) -> str:
 
         with open(filepath, encoding="utf-8", errors="ignore") as f:
             content = f.read()
-
-        outline = [f"File: {filepath}\n"]
-
-        if filepath.endswith(".py"):
-            tree = ast.parse(content)
-            for node in tree.body:
-                if isinstance(node, ast.ClassDef):
-                    doc = ast.get_docstring(node)
-                    doc_str = f'    """{doc}"""\n' if doc else ""
-                    outline.append(f"class {node.name}:\n{doc_str}")
-                    for child in node.body:
-                        if isinstance(child, ast.FunctionDef):
-                            cdoc = ast.get_docstring(child)
-                            cdoc_str = f'        """{cdoc}"""\n' if cdoc else ""
-                            outline.append(f"    def {child.name}(...):\n{cdoc_str}")
-                elif isinstance(node, ast.FunctionDef):
-                    doc = ast.get_docstring(node)
-                    doc_str = f'    """{doc}"""\n' if doc else ""
-                    outline.append(f"def {node.name}(...):\n{doc_str}")
-        elif filepath.endswith((".js", ".ts", ".jsx", ".tsx")):
-            lines = content.splitlines()
-            for line in lines:
-                line_s = line.strip()
-                if re.match(r"^(export\s+)?(default\s+)?class\s+\w+", line_s):
-                    outline.append(line_s)
-                elif re.match(r"^(export\s+)?(default\s+)?(async\s+)?function\s+\w+", line_s):
-                    outline.append(line_s)
-                elif re.match(
-                    r"^(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s*)?(\([^)]*\)|[^=]+)\s*=>",
-                    line_s,
-                ):
-                    outline.append(line_s)
-        else:
-            return f"Error: '{filepath}' language is not supported for outlining. Use read_file instead."
-
-        if len(outline) == 1:
-            return outline[0] + "\nNo classes or functions found."
-        return "\n".join(outline)
+            
+        outline = extract_outline(filepath, content)
+        if outline:
+            return outline
+            
+        # Fallback for unsupported languages (use the old regex method?)
+        # Or just return an error so they use read_file
+        return f"Error: '{filepath}' language is not supported for tree-sitter outlining. Use read_file instead."
     except Exception as e:
         return f"Error getting file outline: {e}"
+
+
+def replace_function(filepath: str, function_name: str, new_content: str, description: str) -> str:
+    """Replace an entire function/class by name using tree-sitter AST bounds."""
+    try:
+        from .treesitter_utils import find_function_lines
+        from .file_ops import replace_file_content
+        
+        filepath = validate_file_path(filepath)
+        if not os.path.exists(filepath):
+            match = fuzzy_match_file(filepath)
+            if match:
+                filepath = match
+            else:
+                return f"Error: File '{filepath}' does not exist."
+
+        with open(filepath, encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+            
+        bounds = find_function_lines(filepath, content, function_name)
+        if not bounds:
+            return f"Error: Could not find function/class '{function_name}' in '{filepath}'."
+            
+        start_line, end_line = bounds
+        
+        # We need to extract the exact target string to use the existing replace tool
+        lines = content.splitlines(keepends=True)
+        # Note: start_line and end_line are 1-indexed
+        target_content = "".join(lines[start_line - 1:end_line])
+        
+        # Add a newline if new_content lacks one but target has one
+        if not new_content.endswith("\n") and target_content.endswith("\n"):
+            new_content += "\n"
+            
+        return replace_file_content(
+            filepath=filepath,
+            start_line=start_line,
+            end_line=end_line,
+            target_content=target_content,
+            replacement_content=new_content
+        )
+    except Exception as e:
+        return f"Error replacing function: {e}"
 
 
 def read_file(filepath: str) -> str:

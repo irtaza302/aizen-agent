@@ -24,10 +24,18 @@ from .file_ops import (
     multi_replace_file_content,
     read_file,
     replace_file_content,
+    replace_function,
     write_file_with_diff,
 )
 from .helpers import try_repair_json
 from .search import find_files, grep_search, list_directory, web_search_impl
+from .browser import (
+    browser_goto,
+    browser_click,
+    browser_get_content,
+    browser_screenshot,
+    browser_evaluate,
+)
 
 # ─── Tools Schema (exposed to the AI model) ────────────────────────────────────
 
@@ -283,16 +291,45 @@ tools = [
         "type": "function",
         "function": {
             "name": "get_file_outline",
-            "description": "Extracts the abstract syntax tree (AST) outline of a Python file, showing classes, methods, and docstrings without the full implementation details. Useful for exploring large codebases.",
+            "description": "Extracts the abstract syntax tree (AST) outline of a file (Python, JS, TS, etc.) using tree-sitter, showing classes, methods, and docstrings without the full implementation details. Useful for exploring large codebases.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "filepath": {
                         "type": "string",
-                        "description": "Path to the Python file.",
+                        "description": "Path to the source file.",
                     }
                 },
                 "required": ["filepath"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "replace_function",
+            "description": "Replaces an entire function or class by name using tree-sitter AST bounds. Eliminates indentation and line-number errors.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filepath": {
+                        "type": "string",
+                        "description": "Path to the file.",
+                    },
+                    "function_name": {
+                        "type": "string",
+                        "description": "The exact name of the function or class to replace.",
+                    },
+                    "new_content": {
+                        "type": "string",
+                        "description": "The full replacement content for the function/class.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "A brief explanation of what was changed.",
+                    }
+                },
+                "required": ["filepath", "function_name", "new_content", "description"],
             },
         },
     },
@@ -333,6 +370,102 @@ tools = [
                     },
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_goto",
+            "description": "Navigate a headless Playwright browser to a specific URL.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to navigate to.",
+                    }
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_click",
+            "description": "Click an element in the browser using a CSS or XPath selector.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "selector": {
+                        "type": "string",
+                        "description": "The selector to click.",
+                    }
+                },
+                "required": ["selector"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_get_content",
+            "description": "Get the current HTML content of the page.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_screenshot",
+            "description": "Take a screenshot of the current page and save it to a file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filepath": {
+                        "type": "string",
+                        "description": "The path to save the screenshot.",
+                    }
+                },
+                "required": ["filepath"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "browser_evaluate",
+            "description": "Evaluate a JavaScript expression in the browser and return its string result.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "script": {
+                        "type": "string",
+                        "description": "The JavaScript code to evaluate.",
+                    }
+                },
+                "required": ["script"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delegate_task",
+            "description": "Delegate a sub-task to an autonomous background instance of Aizen. This sub-agent will run in the background in YOLO mode to complete the task. Use check_background_task to read its output.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_description": {
+                        "type": "string",
+                        "description": "A highly detailed prompt describing what the sub-agent should do, including which files to edit.",
+                    }
+                },
+                "required": ["task_description"],
             },
         },
     },
@@ -461,6 +594,22 @@ def _handle_get_file_outline(args: dict, auto_approve: bool) -> ToolResult:
     return (f" → {filepath or '?'}", truncate_output(get_file_outline(filepath)))
 
 
+@_register("replace_function")
+def _handle_replace_function(args: dict, auto_approve: bool) -> ToolResult:
+    filepath = str(args.get("filepath", ""))
+    function_name = str(args.get("function_name", ""))
+    new_content = str(args.get("new_content", ""))
+    description = str(args.get("description", "AST Function Replacement"))
+    
+    if not auto_approve:
+        preview = f"Replace {function_name} in {filepath}"
+        if not _ask_permission("replace_function", preview):
+            return ("", "Operation cancelled by user.")
+            
+    res = replace_function(filepath, function_name, new_content, description)
+    return (f" → {filepath}", res)
+
+
 @_register("semantic_search")
 def _handle_semantic_search(args: dict, auto_approve: bool) -> ToolResult:
     query = str(args.get("query", ""))
@@ -493,6 +642,46 @@ def _handle_remember_fact(args: dict, auto_approve: bool) -> ToolResult:
     except Exception as e:
         return (suffix, f"Error storing memory: {e}")
 
+
+@_register("browser_goto")
+def _handle_browser_goto(args: dict, auto_approve: bool) -> ToolResult:
+    url = str(args.get("url", ""))
+    return (f" → {url}", browser_goto(url))
+
+@_register("browser_click")
+def _handle_browser_click(args: dict, auto_approve: bool) -> ToolResult:
+    selector = str(args.get("selector", ""))
+    return (f" → {selector}", browser_click(selector))
+
+@_register("browser_get_content")
+def _handle_browser_get_content(args: dict, auto_approve: bool) -> ToolResult:
+    return (" → page content", browser_get_content())
+
+@_register("browser_screenshot")
+def _handle_browser_screenshot(args: dict, auto_approve: bool) -> ToolResult:
+    filepath = str(args.get("filepath", ""))
+    return (f" → {filepath}", browser_screenshot(filepath))
+
+@_register("browser_evaluate")
+def _handle_browser_evaluate(args: dict, auto_approve: bool) -> ToolResult:
+    script = str(args.get("script", ""))
+    return (" → js execution", browser_evaluate(script))
+
+@_register("delegate_task")
+def _handle_delegate_task(args: dict, auto_approve: bool) -> ToolResult:
+    import sys
+    task_desc = str(args.get("task_description", ""))
+    
+    # We construct a command that runs a completely isolated aizen loop in auto mode
+    # --yolo ensures it doesn't block on terminal prompts.
+    # We quote the task description carefully to avoid bash injection.
+    import shlex
+    escaped_task = shlex.quote(task_desc)
+    cmd = f"{sys.executable} -m aizen.main --yolo -p {escaped_task}"
+    
+    # We reuse the run_command_impl to get standard background execution tracking
+    res = run_command_impl(cmd, background=True, auto_approve=True)
+    return (" → sub-agent spawned", res)
 
 # ─── Tool Dispatcher ───────────────────────────────────────────────────────────
 

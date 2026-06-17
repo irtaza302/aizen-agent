@@ -3,3 +3,8 @@ python-dotenv
 rich
 prompt_toolkit
 mcp
+tree-sitter
+tree-sitter-python
+tree-sitter-javascript
+tree-sitter-typescript
+playwright

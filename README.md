@@ -21,6 +21,9 @@ A helpful AI coding assistant you can use right in your terminal. Aizen reads yo
 - **Smart Context & Autocomplete** — Auto-detects project languages/frameworks on startup. `@`-mention files with Tab completion that respects `.gitignore` and supports directory traversal.
 - **Vision Support** — Attach images natively (e.g., `@mockup.png`) and Aizen will automatically encode them for Vision APIs (GPT-4o, Claude 3.5 Sonnet).
 - **Real-time Command Streaming** — Long-running shell commands stream their output live to the terminal instead of freezing with a spinner.
+- **Universal AST Parsing** — Uses `tree-sitter` for flawless codebase outlines and surgical syntax-tree-level edits (`replace_function`) across Python, JS, TS, JSX, and TSX.
+- **Headless Browser Automation** — Built-in Playwright integration allows Aizen to navigate web pages, evaluate JS, click elements, and take screenshots for visual QA.
+- **Multi-Agent Orchestration** — Aizen can act as a Manager Agent, using `delegate_task` to spawn background sub-agents and execute complex tasks concurrently.
 - **Cost Guardrails** — Real‑time cost tracking, cross-session analytics (`/stats`), and strict budget caps (`--budget`).
 
 ### Tools
@@ -38,7 +41,10 @@ Aizen has built-in tools the AI can use:
 | `list_directory` | List files/folders with sizes, respecting `.gitignore` |
 | `grep_search` | Search for text or regex patterns across the codebase |
 | `find_files` | Find files by glob pattern (e.g., `*.py`, `Dockerfile`) |
-| `get_file_outline` | Extract AST outline of a Python file (classes, methods, docstrings) without blowing up the context window |
+| `get_file_outline` | Extract AST outline using tree-sitter across multiple languages |
+| `replace_function` | Safely replace an entire function/class using AST bounds, eliminating indentation/regex errors |
+| `delegate_task` | Delegate sub-tasks to isolated background instances of Aizen for concurrent processing |
+| `browser_*` | Suite of Playwright tools (`goto`, `get_content`, `click`, `screenshot`, `evaluate`) |
 | `web_search` | Search the web for current information, docs, or API references |
 | `remember_fact` | Store a fact in persistent memory (used autonomously by AI) |
 
