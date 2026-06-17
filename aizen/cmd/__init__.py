@@ -1,13 +1,7 @@
-from .registry import handle_slash_command, get_slash_commands_list
-from .completer import AizenCompleter
-
 # Import all command modules to register them
-from . import session_cmds
-from . import git_cmds
-from . import model_cmds
-from . import memory_cmds
-from . import search_cmds
-from . import misc_cmds
+from . import git_cmds, memory_cmds, misc_cmds, model_cmds, search_cmds, session_cmds  # noqa: F401
+from .completer import AizenCompleter
+from .registry import get_slash_commands_list, handle_slash_command
 
 # Re-export SLASH_COMMANDS for main.py (it's used but wait, let me use property or just export it)
 SLASH_COMMANDS = get_slash_commands_list()

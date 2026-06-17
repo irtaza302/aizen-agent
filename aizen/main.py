@@ -82,9 +82,9 @@ def inject_file_context(user_input: str) -> str:
                 if result.stderr:
                     output += "\n--- STDERR ---\n" + result.stderr
                 # Truncate output to prevent memory exhaustion
-                _MAX_CMD_OUTPUT = 50_000  # 50KB limit
-                if len(output) > _MAX_CMD_OUTPUT:
-                    output = output[:_MAX_CMD_OUTPUT] + "\n[Output truncated at 50KB]"
+                _max_cmd_output = 50_000  # 50KB limit
+                if len(output) > _max_cmd_output:
+                    output = output[:_max_cmd_output] + "\n[Output truncated at 50KB]"
                 if not output.strip():
                     output = "[Command executed successfully with no output]"
                 context_blocks.append(

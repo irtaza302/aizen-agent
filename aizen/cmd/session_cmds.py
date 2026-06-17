@@ -1,11 +1,12 @@
 import copy
 from datetime import datetime
 
-from ..config import Theme, console, get_active_model
-from ..session import list_sessions, load_session, save_session
-from ..context import ContextPruner
-from .registry import register, CommandContext
 from rich.table import Table
+
+from ..config import Theme, console, get_active_model
+from ..context import ContextPruner
+from ..session import list_sessions, load_session, save_session
+from .registry import CommandContext, register
 
 # In-memory checkpoint storage for conversation branching
 _checkpoints: dict[str, list] = {}

@@ -1,9 +1,12 @@
 import platform
 import subprocess
+
 from rich.table import Table
+
 from ..config import Theme, console, get_active_model
 from ..tools import backup_manager
-from .registry import register, CommandContext
+from .registry import CommandContext, register
+
 
 @register("/usage", "Show token usage statistics")
 async def usage_cmd(arg: str, ctx: CommandContext) -> bool:

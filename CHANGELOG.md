@@ -5,6 +5,20 @@ All notable changes to the Aizen AI CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.1] - 2026-06-17
+
+### Fixed
+- Fixed context pruner duplication and run_turn signature bug.
+- Hardened security against path traversal and added output limit truncations.
+- Resolved various Ruff linting and syntax errors.
+- Bumped versions across npm, Homebrew, and Python packages.
+
+## [2.6.0] - 2026-06-15
+
+### Changed
+- Major architectural refactor: Split `commands.py` into a modular `aizen/cmd/` package.
+- Dispatcher refactored to use a clean registry pattern (`TOOL_HANDLERS`).
+
 ## [2.5.0] - 2026-06-12
 
 ### Added

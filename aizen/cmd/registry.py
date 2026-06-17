@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+
 @dataclass
 class CommandContext:
     """Shared context passed to all command handlers."""
@@ -50,7 +51,7 @@ async def handle_slash_command(
     if cmd in _COMMANDS:
         _, handler = _COMMANDS[cmd]
         return await handler(arg, ctx)
-    
+
     # Special case for /help which requires all commands
     if cmd == "/help":
         _handle_help()
@@ -64,8 +65,9 @@ async def handle_slash_command(
 
 def _handle_help():
     from rich.table import Table
+
     from ..config import Theme, console
-    
+
     help_table = Table(
         title="⚡ Aizen Commands",
         border_style=Theme.BORDER,

@@ -5,6 +5,7 @@ Also defines the tools schema list exposed to the OpenAI API.
 
 import json
 import os
+from collections.abc import Callable
 
 from rich.text import Text
 
@@ -341,12 +342,10 @@ tools = [
 
 # ─── Tool Handler Registry ──────────────────────────────────────────────────────
 
-from typing import Callable, Tuple
-
 # Each handler receives (args, auto_approve) and returns
 # (label_suffix, result) so the dispatcher can print the tool label
 # with the correct suffix before returning the result.
-ToolResult = Tuple[str, str]
+ToolResult = tuple[str, str]
 
 TOOL_HANDLERS: dict[str, Callable[..., ToolResult]] = {}
 

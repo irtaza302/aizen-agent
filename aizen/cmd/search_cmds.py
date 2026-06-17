@@ -1,6 +1,8 @@
 import asyncio
+
 from ..config import Theme, console
-from .registry import register, CommandContext
+from .registry import CommandContext, register
+
 
 @register("/search", "Search the codebase using semantic (RAG) search")
 async def search_cmd(arg: str, ctx: CommandContext) -> bool:

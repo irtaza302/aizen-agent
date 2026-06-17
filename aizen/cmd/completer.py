@@ -1,9 +1,12 @@
 import os
+
 from prompt_toolkit.completion import Completer, Completion
+
 from ..config import get_cached_models
 from ..logging_config import logger
 from ..utils import load_gitignore_patterns, should_ignore
 from .registry import get_slash_commands_list
+
 
 class AizenCompleter(Completer):
     """Autocomplete for both slash commands (/) and file mentions (@)."""

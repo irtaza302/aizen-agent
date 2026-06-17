@@ -1,7 +1,10 @@
 import subprocess
+
 import questionary
+
 from ..config import Theme, console, get_active_model
-from .registry import register, CommandContext
+from .registry import CommandContext, register
+
 
 @register("/commit", "Auto-generate and commit changes")
 async def commit_cmd(arg: str, ctx: CommandContext) -> bool:

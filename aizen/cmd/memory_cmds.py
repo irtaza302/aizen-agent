@@ -1,7 +1,10 @@
 import os
+
 from rich.table import Table
+
 from ..config import Theme, console
-from .registry import register, CommandContext
+from .registry import CommandContext, register
+
 
 @register("/remember", "Store a fact in persistent memory")
 async def remember_cmd(arg: str, ctx: CommandContext) -> bool:

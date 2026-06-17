@@ -1,6 +1,18 @@
 from rich.table import Table
-from ..config import Theme, console, get_active_model, get_cached_models, set_active_model, load_config, CONFIG_PATH, SESSIONS_DIR, BACKUPS_DIR
-from .registry import register, CommandContext
+
+from ..config import (
+    BACKUPS_DIR,
+    CONFIG_PATH,
+    SESSIONS_DIR,
+    Theme,
+    console,
+    get_active_model,
+    get_cached_models,
+    load_config,
+    set_active_model,
+)
+from .registry import CommandContext, register
+
 
 @register("/model", "View or switch the active model")
 async def model_cmd(arg: str, ctx: CommandContext) -> bool:
