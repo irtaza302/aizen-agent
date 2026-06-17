@@ -16,8 +16,8 @@ class TestReadFile:
         assert "Hello, world!" in result
         assert "[File:" in result
 
-    def test_read_nonexistent_file(self):
-        result = read_file("/nonexistent/path/file.py")
+    def test_read_nonexistent_file(self, tmp_dir):
+        result = read_file(os.path.join(tmp_dir, "nonexistent.py"))
         assert "Error" in result
         assert "does not exist" in result
 

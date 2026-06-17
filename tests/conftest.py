@@ -12,8 +12,13 @@ import pytest
 def tmp_dir():
     """Create a temporary directory for file operations."""
     d = tempfile.mkdtemp()
-    yield d
-    shutil.rmtree(d, ignore_errors=True)
+    resolved_d = os.path.realpath(d)
+    from aizen.tools.file_ops import set_workspace_root, _workspace_root
+    original_root = _workspace_root
+    set_workspace_root(resolved_d)
+    yield resolved_d
+    shutil.rmtree(resolved_d, ignore_errors=True)
+    set_workspace_root(original_root)
 
 
 @pytest.fixture

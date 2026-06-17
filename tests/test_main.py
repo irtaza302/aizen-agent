@@ -1,5 +1,6 @@
 """Tests for aizen.main module."""
 
+import os
 from unittest.mock import MagicMock, patch
 
 from aizen.main import inject_file_context
@@ -20,7 +21,7 @@ class TestMain:
 
         result = inject_file_context(user_input)
 
-        mock_run.assert_called_once_with("echo 'hello world'", shell=True, capture_output=True, text=True, timeout=30)
+        mock_run.assert_called_once_with("echo 'hello world'", shell=True, capture_output=True, text=True, timeout=30, cwd=os.getcwd())
         assert "<command_context cmd=\"echo 'hello world'\">" in result
         assert "hello world" in result
         assert "</command_context>" in result
@@ -37,7 +38,7 @@ class TestMain:
 
         result = inject_file_context(user_input)
 
-        mock_run.assert_called_once_with("ls-fake", shell=True, capture_output=True, text=True, timeout=30)
+        mock_run.assert_called_once_with("ls-fake", shell=True, capture_output=True, text=True, timeout=30, cwd=os.getcwd())
         assert "<command_context cmd=\"ls-fake\">" in result
         assert "error message" in result
         assert "--- STDERR ---" in result

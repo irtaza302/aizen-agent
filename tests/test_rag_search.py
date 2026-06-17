@@ -1288,7 +1288,7 @@ def test_combo_indexer_sync_and_command(tmp_dir):
     store.sync_workspace(tmp_dir, chunker, embedder)
 
     runner = SlashCommandRunner(store, embedder)
-    console = Console(color_system=None, force_terminal=False)
+    console = Console(color_system=None, force_terminal=False, width=1000)
     with console.capture() as capture:
         runner.run("/search implement_indexing_logic", console_obj=console)
 
