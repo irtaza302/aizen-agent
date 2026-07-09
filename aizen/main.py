@@ -48,7 +48,6 @@ from .session import save_session
 from .tools import backup_manager, tools
 from .utils import TokenTracker, fetch_url_content, generate_directory_tree
 
-
 SAFE_COMMANDS = {"git", "cat", "ls", "grep", "find", "mkdir", "echo", "help"}
 
 

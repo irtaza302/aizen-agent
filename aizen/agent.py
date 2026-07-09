@@ -335,7 +335,7 @@ class AgentRunner:
                         "role": "tool",
                         "tool_call_id": tc_dict["id"],
                         "name": tc_dict["function"]["name"],
-                        "content": f"Error: Tool execution timed out.",
+                        "content": "Error: Tool execution timed out.",
                     }
 
         tool_results = await asyncio.gather(
