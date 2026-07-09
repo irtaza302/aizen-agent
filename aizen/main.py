@@ -3,6 +3,8 @@
 Aizen AI Agent — A professional-grade AI coding assistant for your terminal.
 """
 
+import utils.transport
+import utils.session
 import argparse
 import asyncio
 import base64
