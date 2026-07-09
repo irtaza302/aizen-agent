@@ -34,11 +34,12 @@ class TestMain:
         mock_result.stderr = "error message\n"
         mock_run.return_value = mock_result
 
-        user_input = "Error here: @cmd:ls-fake"
+        # Use a safe-list command so the whitelist check passes; stderr is mocked
+        user_input = "Error here: @cmd:ls"
 
         result = inject_file_context(user_input)
 
-        mock_run.assert_called_once_with("ls-fake", shell=True, capture_output=True, text=True, timeout=30, cwd=os.getcwd())
-        assert "<command_context cmd=\"ls-fake\">" in result
+        mock_run.assert_called_once_with("ls", shell=True, capture_output=True, text=True, timeout=30, cwd=os.getcwd())
+        assert '<command_context cmd="ls">' in result
         assert "error message" in result
         assert "--- STDERR ---" in result
